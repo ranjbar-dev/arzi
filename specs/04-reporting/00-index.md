@@ -1,0 +1,52 @@
+# 04 — Reporting, Ledgers, Statements, Printing and Exports
+
+> Scope: everything the legacy Delphi/VCL "arzi" application does to **read** accounting data
+> back out — trial balances, journals, ledgers, running-account cards, generic reports,
+> the FastReport print pipeline, and the Excel/CSV/image export pipeline.
+>
+> Companion docs: `01-glossary.md` (Persian→English term map — read first),
+> `03-accounting-core.md` (posting model), `07-parties-and-shareholders.md`,
+> `08-platform-and-security.md`, `09-unit-index.md`.
+>
+> **Given context (established by sibling agents, not re-derived here):**
+> - `CO_ID` / `COID` is a **fiscal-year** id, not a tenant id. One physical DB; every
+>   transactional table carries a `*_COID` stamp. Every report is therefore year-scoped.
+> - `Sarfasl` (chart of accounts) is **global across years**. Levels Kol / Moein /
+>   Tafsil1 / Tafsil2 form a 4-segment code. Postable = leaf (`S_Child = 0`).
+>   There is **no account-type/nature column**; nature is implied by hard-coded Kol
+>   number ranges in `Sarfasl_SelectU.pas`.
+> - `Moein` = voucher **lines** (system of record). `DMoein` = voucher **headers** whose
+>   stored totals are drift-prone caches. Voucher state machine `0 → 1 → 2`.
+> - Persian dates are stored as **strings**; two incompatible Jalali algorithms are live.
+> - Stored-procedure **bodies do not exist in this repo**.
+
+This directory splits the original single-file `04-reporting.md` (3927 lines) into one file per
+top-level section (further split by `###` subheading where a section ran long), for easier review
+and cross-linking. All content is copied verbatim from the original; no section, table row, or code
+block was reworded, summarized, or dropped. Other docs that cite `04-reporting.md §N` refer to the
+same section numbers used below.
+
+| Section | Title | File | Approx lines |
+|---|---|---|---|
+| 1 | Report catalogue (1/3 — §1.0–1.3) | [04-01-a-report-catalogue.md](04-01-a-report-catalogue.md) | 297 |
+| 1 | Report catalogue (2/3 — §1.4–1.8) | [04-01-b-report-catalogue.md](04-01-b-report-catalogue.md) | 282 |
+| 1 | Report catalogue (3/3 — §1.9–1.13) | [04-01-c-report-catalogue.md](04-01-c-report-catalogue.md) | 71 |
+| 2 | Trial balances in depth (1/2 — §2.0–2.1) | [04-02-a-trial-balances-in-depth.md](04-02-a-trial-balances-in-depth.md) | 276 |
+| 2 | Trial balances in depth (2/2 — §2.2–2.3) | [04-02-b-trial-balances-in-depth.md](04-02-b-trial-balances-in-depth.md) | 207 |
+| 3 | General and subsidiary ledgers (1/3 — §3.0–3.1) | [04-03-a-general-and-subsidiary-ledgers.md](04-03-a-general-and-subsidiary-ledgers.md) | 273 |
+| 3 | General and subsidiary ledgers (2/3 — §3.2–3.4) | [04-03-b-general-and-subsidiary-ledgers.md](04-03-b-general-and-subsidiary-ledgers.md) | 263 |
+| 3 | General and subsidiary ledgers (3/3 — §3.5–3.6) | [04-03-c-general-and-subsidiary-ledgers.md](04-03-c-general-and-subsidiary-ledgers.md) | 49 |
+| 4 | Card Jari — running account statement (1/2 — §4.0–4.7) | [04-04-a-card-jari.md](04-04-a-card-jari.md) | 260 |
+| 4 | Card Jari — running account statement (2/2 — §4.8–4.11) | [04-04-b-card-jari.md](04-04-b-card-jari.md) | 122 |
+| 5 | Date-range and fiscal-year filtering semantics | [04-05-date-range-and-fiscal-year-filtering-semantics.md](04-05-date-range-and-fiscal-year-filtering-semantics.md) | 236 |
+| 6 | Print pipeline (1/2 — §6.1–6.5) | [04-06-a-print-pipeline.md](04-06-a-print-pipeline.md) | 203 |
+| 6 | Print pipeline (2/2 — §6.6–6.10) | [04-06-b-print-pipeline.md](04-06-b-print-pipeline.md) | 112 |
+| 7 | Export pipeline | [04-07-export-pipeline.md](04-07-export-pipeline.md) | 281 |
+| 8 | Rebuild recommendations | [04-08-rebuild-recommendations.md](04-08-rebuild-recommendations.md) | 209 |
+| 9 | Open questions | [04-09-open-questions.md](04-09-open-questions.md) | 195 |
+| 10 | PROPOSED IMPROVEMENTS — needs user approval (1/2 — Group A, Group B) | [04-10-a-proposed-improvements.md](04-10-a-proposed-improvements.md) | 221 |
+| 10 | PROPOSED IMPROVEMENTS — needs user approval (2/2 — Group C, sequencing) | [04-10-b-proposed-improvements.md](04-10-b-proposed-improvements.md) | 136 |
+| 11 | Naming map | [04-11-naming-map.md](04-11-naming-map.md) | 212 |
+
+Total original content: 3905 lines (plus the 22-line title/opening block reproduced above and in the
+original `../04-reporting.md`), across 19 part files.
