@@ -24,8 +24,8 @@
 //!
 //! Narration for the credit line avoids the legacy's `CM_Desc + ' تعداد '
 //! + N + ' نفر '` ("count N persons") — accurate-ish for payees (who often
-//! are people) but inconsistent with this codebase's own petty-cash fix and
-//! with the fact a payee can be a company; composed as "N payee(s)" instead.
+//!   are people) but inconsistent with this codebase's own petty-cash fix and
+//!   with the fact a payee can be a company; composed as "N payee(s)" instead.
 
 use crate::{
     audit,

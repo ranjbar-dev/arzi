@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 pub mod accounts;
 pub mod audit;
 pub mod auth;

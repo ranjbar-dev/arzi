@@ -12,6 +12,7 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 
 struct Fixture {
+    #[allow(dead_code)]
     tenant_id: i64,
     fiscal_year_id: i64,
     payer_account_id: i64,

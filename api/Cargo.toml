@@ -3,6 +3,12 @@ name = "api"
 version = "0.1.0"
 edition = "2021"
 
+# too_many_arguments: posting helpers (tx, tenant_id, fiscal_year_id, ..., actor_id) and test
+# fixture builders share a wide signature by deliberate convention, not oversight — applies to
+# every target (lib + integration tests) so each test file doesn't need its own allow.
+[lints.clippy]
+too_many_arguments = "allow"
+
 [dependencies]
 axum = "0.8"
 axum-extra = { version = "0.12", features = ["cookie"] }

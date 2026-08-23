@@ -18,6 +18,7 @@ use tower::ServiceExt;
 
 struct Fixture {
     outgoing_fy: i64,
+    #[allow(dead_code)]
     incoming_fy: i64,
     cash_id: i64,
     revenue_kol_id: i64,
