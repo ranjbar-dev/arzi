@@ -143,16 +143,23 @@ jobs:
       #                      pasted as one multiline secret, written verbatim to .env on the
       #                      server on every deploy. TLS/domain routing is host nginx, not .env
       #                      (deploy/nginx/arzi.conf).
+      #   ADMIN_USERNAME  - optional, defaults to "admin"
+      #   ADMIN_PASSWORD  - password for the bootstrap superuser (default tenant, first login).
+      #                      Only ever used to create the account if it's missing (ON CONFLICT DO
+      #                      NOTHING below) — rotate it via the admin UI afterwards, not by
+      #                      changing this secret.
       - name: SSH deploy
         uses: appleboy/ssh-action@v1.0.3
         env:
           DEPLOY_ENV_FILE: ${{ secrets.DEPLOY_ENV_FILE }}
+          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
           port: ${{ secrets.DEPLOY_PORT }}
-          envs: DEPLOY_ENV_FILE
+          envs: DEPLOY_ENV_FILE,ADMIN_USERNAME,ADMIN_PASSWORD
           # Default 10m isn't enough for a from-scratch `cargo-chef cook` on a fresh server (no
           # Docker layer cache yet) - the typst dep tree alone is ~150 crates. Later deploys reuse
           # cargo-chef's cached layer when Cargo.lock is unchanged and finish in a fraction of this.
@@ -168,4 +175,21 @@ jobs:
             printf '%s\n' "$DEPLOY_ENV_FILE" > .env
             docker compose -f docker-compose.yml -f docker-compose.prod.yml build
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+            # Bootstrap the default tenant + first superuser (idempotent — ON CONFLICT DO
+            # NOTHING). `api` runs migrations on boot, so wait for the `users` table before
+            # inserting. Password is hashed with a throwaway container since the api image
+            # has no CLI for it (api/src/auth/mod.rs's Argon2::default()).
+            : "${ADMIN_USERNAME:=admin}"
+            set -a; . ./.env; set +a
+            timeout 120 sh -c 'until docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1 FROM users" >/dev/null 2>&1; do sleep 2; done'
+            ADMIN_HASH=$(docker run --rm alpine sh -c "apk add -q argon2 >/dev/null 2>&1 && printf '%s' \"$ADMIN_PASSWORD\" | argon2 \$(openssl rand -hex 16) -id -e")
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+              -v admin_user="$ADMIN_USERNAME" -v admin_hash="$ADMIN_HASH" <<'SQL'
+            INSERT INTO tenants (slug, name) VALUES ('default', 'Arzi') ON CONFLICT (slug) DO NOTHING;
+            INSERT INTO users (tenant_id, username, password_hash, is_superuser)
+            SELECT id, :'admin_user', :'admin_hash', true FROM tenants WHERE slug = 'default'
+            ON CONFLICT (tenant_id, username) DO NOTHING;
+            SQL
+
             docker image prune -f
