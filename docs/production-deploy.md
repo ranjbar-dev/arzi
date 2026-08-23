@@ -37,16 +37,23 @@ instead of silently on container start.
 
 ## TLS termination
 
-TLS terminates in **host nginx**, not a container — see `deploy/nginx/arzi.conf` for the site
-config and its own header comment for the install/certbot steps. `docker-compose.prod.yml`
-publishes `web` to `127.0.0.1:${WEB_PORT}` only (not `0.0.0.0`), so nginx on the same host can
-reach it but nothing else can bypass nginx to reach it directly. `db` still has no published host
-port in prod. `web`'s own `next.config.ts` rewrite already proxies `/api/v1/*` to `api`
-server-to-server, so the browser never needs a direct route to either `api` or `db`.
+TLS terminates at **Cloudflare**, not on this server — Cloudflare SSL/TLS mode is set to
+**Flexible** (dashboard: SSL/TLS -> Overview), so the browser-to-Cloudflare hop is HTTPS and the
+Cloudflare-to-origin hop is plain HTTP. Host nginx (`deploy/nginx/arzi.conf`) is the origin,
+listens on plain port 80 only, no cert on this box. `docker-compose.prod.yml` publishes `web` to
+`127.0.0.1:${WEB_PORT}` only (not `0.0.0.0`), so nginx on the same host can reach it but nothing
+else can bypass nginx to reach it directly. `db` still has no published host port in prod. `web`'s
+own `next.config.ts` rewrite already proxies `/api/v1/*` to `api` server-to-server, so the browser
+never needs a direct route to either `api` or `db`.
 
-(An earlier version of this stack ran Caddy in a container for automatic HTTPS. Switched to host
-nginx because the target server already runs nginx for other sites — one ingress on the box, not
-two fighting over 80/443.)
+`SESSION_COOKIE_SECURE=true` stays correct under Flexible SSL — the browser's own connection is
+HTTPS (to Cloudflare), which is what the cookie's `Secure` flag checks; the plain-HTTP hop behind
+Cloudflare is invisible to the browser.
+
+(An earlier version of this stack ran Caddy in a container for automatic HTTPS directly on the
+origin. Switched to Cloudflare Flexible SSL + host nginx: the target server already runs nginx for
+other sites, and Cloudflare issuing/renewing the edge cert means nothing on this box needs a
+cert at all.)
 
 ## Manual test procedure (this step's own "Done when")
 
@@ -66,6 +73,9 @@ two fighting over 80/443.)
    docker-compose.yml docker-compose.prod.yml` → matches nothing (every credential is an
    environment-variable *reference*, `${VAR}` or `$VAR`, never a literal value baked into a file
    that gets committed).
-5. **TLS live**: with the stack up and nginx configured per `deploy/nginx/arzi.conf` (certbot already
-   run) → `curl https://ranjbar.dev/` redirects to `/login`; `curl http://ranjbar.dev/` gets a
-   redirect to the HTTPS URL (certbot's nginx plugin adds this automatically).
+5. **TLS live**: with the stack up, nginx configured per `deploy/nginx/arzi.conf`, DNS for
+   `ranjbar.dev`/`www.ranjbar.dev` proxied through Cloudflare (orange cloud), and Cloudflare
+   SSL/TLS mode set to Flexible → `curl https://ranjbar.dev/` redirects to `/login`. `curl
+   http://<origin-ip>/` directly against the origin (bypassing Cloudflare) also serves the app —
+   expected under Flexible SSL, since the origin is deliberately plain HTTP; only the Cloudflare
+   edge enforces HTTPS for real visitors.
