@@ -46,19 +46,34 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn req(router: &axum::Router, method: &str, path: &str, token: &str, body: Value) -> axum::response::Response {
-    let mut builder = Request::builder().method(method).uri(path).header(header::COOKIE, cookie(token));
+async fn req(
+    router: &axum::Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Value,
+) -> axum::response::Response {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::COOKIE, cookie(token));
     let b = if body.is_null() {
         Body::empty()
     } else {
         builder = builder.header(header::CONTENT_TYPE, "application/json");
         Body::from(body.to_string())
     };
-    router.clone().oneshot(builder.body(b).unwrap()).await.unwrap()
+    router
+        .clone()
+        .oneshot(builder.body(b).unwrap())
+        .await
+        .unwrap()
 }
 
 async fn seed_fiscal_year(pool: &PgPool, tenant_id: i64) -> i64 {
@@ -115,8 +130,9 @@ async fn setup(pool: &PgPool) -> Fixture {
     let inventory1 = seed_leaf_account(pool, tenant_id, 904, 1, "Inventory WH1").await;
     let inventory2 = seed_leaf_account(pool, tenant_id, 904, 2, "Inventory WH2").await;
 
-    let warehouse_id: i64 = {
-        let resp = req(
+    let warehouse_id: i64 =
+        {
+            let resp = req(
             &router, "POST", "/api/v1/warehouses", &token,
             json!({
                 "name": "Main", "vatRatePct": "9",
@@ -128,11 +144,12 @@ async fn setup(pool: &PgPool) -> Fixture {
             }),
         )
         .await;
-        assert_eq!(resp.status(), StatusCode::CREATED);
-        json_body(resp).await["id"].as_i64().unwrap()
-    };
-    let warehouse2_id: i64 = {
-        let resp = req(
+            assert_eq!(resp.status(), StatusCode::CREATED);
+            json_body(resp).await["id"].as_i64().unwrap()
+        };
+    let warehouse2_id: i64 =
+        {
+            let resp = req(
             &router, "POST", "/api/v1/warehouses", &token,
             json!({
                 "name": "Secondary", "vatRatePct": "9",
@@ -144,20 +161,38 @@ async fn setup(pool: &PgPool) -> Fixture {
             }),
         )
         .await;
-        json_body(resp).await["id"].as_i64().unwrap()
-    };
+            json_body(resp).await["id"].as_i64().unwrap()
+        };
 
     let counterparty_id = seed_leaf_account(pool, tenant_id, 103, 1, "Trade AR").await;
-    let resp = req(&router, "POST", "/api/v1/units-of-measure", &token, json!({ "name": "kg" })).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/units-of-measure",
+        &token,
+        json!({ "name": "kg" }),
+    )
+    .await;
     let uom_id = json_body(resp).await["id"].as_i64().unwrap();
     let resp = req(
-        &router, "POST", "/api/v1/items", &token,
+        &router,
+        "POST",
+        "/api/v1/items",
+        &token,
         json!({ "code": 1, "name": "Item", "unitOfMeasureId": uom_id, "salePrice": 1000 }),
     )
     .await;
     let item_id = json_body(resp).await["id"].as_i64().unwrap();
 
-    Fixture { tenant_id, token, fiscal_year_id, warehouse_id, warehouse2_id, counterparty_id, item_id }
+    Fixture {
+        tenant_id,
+        token,
+        fiscal_year_id,
+        warehouse_id,
+        warehouse2_id,
+        counterparty_id,
+        item_id,
+    }
 }
 
 async fn voucher_totals(pool: &PgPool, voucher_id: i64) -> (i64, i64, i32) {
@@ -193,10 +228,24 @@ async fn purchase_with_discount_and_vat_posts_balanced(pool: PgPool) -> sqlx::Re
     .await;
     assert_eq!(resp.status(), StatusCode::CREATED);
 
-    let resp = req(&router, "POST", &format!("/api/v1/inventory-documents/{document_id}/post"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{document_id}/post"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT, "post failed");
 
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{document_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{document_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let body = json_body(resp).await;
     let voucher_id = body["postedVoucherId"].as_i64().unwrap();
     let (debit, credit, _lines) = voucher_totals(&pool, voucher_id).await;
@@ -220,16 +269,42 @@ async fn production_and_transfer_post_balanced_vouchers(pool: PgPool) -> sqlx::R
         }),
     )
     .await;
-    assert_eq!(resp.status(), StatusCode::CREATED, "{:?}", json_body(resp).await);
+    assert_eq!(
+        resp.status(),
+        StatusCode::CREATED,
+        "{:?}",
+        json_body(resp).await
+    );
     let production_id = json_body(resp).await["id"].as_i64().unwrap();
     req(
-        &router, "POST", &format!("/api/v1/inventory-documents/{production_id}/lines"), &f.token,
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{production_id}/lines"),
+        &f.token,
         json!({ "itemId": f.item_id, "quantity": "5", "unitPrice": 200_000 }),
     )
     .await;
-    let resp = req(&router, "POST", &format!("/api/v1/inventory-documents/{production_id}/post"), &f.token, Value::Null).await;
-    assert_eq!(resp.status(), StatusCode::NO_CONTENT, "production post failed");
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{production_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{production_id}/post"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        resp.status(),
+        StatusCode::NO_CONTENT,
+        "production post failed"
+    );
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{production_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let voucher_id = json_body(resp).await["postedVoucherId"].as_i64().unwrap();
     let (debit, credit, lines) = voucher_totals(&pool, voucher_id).await;
     assert_eq!(debit, credit);
@@ -245,16 +320,42 @@ async fn production_and_transfer_post_balanced_vouchers(pool: PgPool) -> sqlx::R
         }),
     )
     .await;
-    assert_eq!(resp.status(), StatusCode::CREATED, "{:?}", json_body(resp).await);
+    assert_eq!(
+        resp.status(),
+        StatusCode::CREATED,
+        "{:?}",
+        json_body(resp).await
+    );
     let transfer_id = json_body(resp).await["id"].as_i64().unwrap();
     req(
-        &router, "POST", &format!("/api/v1/inventory-documents/{transfer_id}/lines"), &f.token,
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{transfer_id}/lines"),
+        &f.token,
         json!({ "itemId": f.item_id, "quantity": "3", "unitPrice": 100_000 }),
     )
     .await;
-    let resp = req(&router, "POST", &format!("/api/v1/inventory-documents/{transfer_id}/post"), &f.token, Value::Null).await;
-    assert_eq!(resp.status(), StatusCode::NO_CONTENT, "transfer post failed");
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{transfer_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{transfer_id}/post"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        resp.status(),
+        StatusCode::NO_CONTENT,
+        "transfer post failed"
+    );
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{transfer_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let voucher_id = json_body(resp).await["postedVoucherId"].as_i64().unwrap();
     let (debit, credit, lines) = voucher_totals(&pool, voucher_id).await;
     assert_eq!(debit, credit);
@@ -279,22 +380,54 @@ async fn deleting_a_posted_document_removes_the_whole_voucher(pool: PgPool) -> s
     .await;
     let document_id = json_body(resp).await["id"].as_i64().unwrap();
     req(
-        &router, "POST", &format!("/api/v1/inventory-documents/{document_id}/lines"), &f.token,
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{document_id}/lines"),
+        &f.token,
         json!({ "itemId": f.item_id, "quantity": "1", "unitPrice": 100_000 }),
     )
     .await;
-    req(&router, "POST", &format!("/api/v1/inventory-documents/{document_id}/post"), &f.token, Value::Null).await;
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{document_id}"), &f.token, Value::Null).await;
+    req(
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{document_id}/post"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{document_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let voucher_id = json_body(resp).await["postedVoucherId"].as_i64().unwrap();
 
-    let resp = req(&router, "DELETE", &format!("/api/v1/inventory-documents/{document_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "DELETE",
+        &format!("/api/v1/inventory-documents/{document_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     let voucher_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vouchers WHERE id = $1)").bind(voucher_id).fetch_one(&pool).await.unwrap();
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vouchers WHERE id = $1)")
+            .bind(voucher_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert!(!voucher_exists, "voucher must be gone");
     let lines_left: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM voucher_lines WHERE voucher_id = $1").bind(voucher_id).fetch_one(&pool).await.unwrap();
+        sqlx::query_scalar("SELECT count(*) FROM voucher_lines WHERE voucher_id = $1")
+            .bind(voucher_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(lines_left, 0, "no orphaned voucher lines");
     Ok(())
 }
@@ -307,7 +440,10 @@ async fn reposting_is_idempotent_no_duplicates(pool: PgPool) -> sqlx::Result<()>
     let router = app(AppState { pool: pool.clone() });
 
     let resp = req(
-        &router, "POST", "/api/v1/inventory-documents", &f.token,
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
         json!({
             "fiscalYearId": f.fiscal_year_id, "documentType": "issue", "documentDate": "2027-05-01",
             "warehouseId": f.warehouse_id, "counterpartyAccountId": f.counterparty_id,
@@ -316,35 +452,83 @@ async fn reposting_is_idempotent_no_duplicates(pool: PgPool) -> sqlx::Result<()>
     .await;
     let document_id = json_body(resp).await["id"].as_i64().unwrap();
     let resp = req(
-        &router, "POST", &format!("/api/v1/inventory-documents/{document_id}/lines"), &f.token,
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{document_id}/lines"),
+        &f.token,
         json!({ "itemId": f.item_id, "quantity": "1", "unitPrice": 100_000 }),
     )
     .await;
     let line_id = json_body(resp).await["id"].as_i64().unwrap();
 
-    req(&router, "POST", &format!("/api/v1/inventory-documents/{document_id}/post"), &f.token, Value::Null).await;
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{document_id}"), &f.token, Value::Null).await;
+    req(
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{document_id}/post"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{document_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let first_voucher_id = json_body(resp).await["postedVoucherId"].as_i64().unwrap();
 
     // Edit the line while posted (5.8 relaxes the draft-only guard) then re-post.
     let resp = req(
-        &router, "PUT", &format!("/api/v1/inventory-documents/{document_id}/lines/{line_id}"), &f.token,
+        &router,
+        "PUT",
+        &format!("/api/v1/inventory-documents/{document_id}/lines/{line_id}"),
+        &f.token,
         json!({ "itemId": f.item_id, "quantity": "2", "unitPrice": 100_000 }),
     )
     .await;
-    assert_eq!(resp.status(), StatusCode::NO_CONTENT, "editing a posted line should now be allowed");
+    assert_eq!(
+        resp.status(),
+        StatusCode::NO_CONTENT,
+        "editing a posted line should now be allowed"
+    );
 
-    let resp = req(&router, "POST", &format!("/api/v1/inventory-documents/{document_id}/post"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{document_id}/post"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{document_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{document_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let body = json_body(resp).await;
     let second_voucher_id = body["postedVoucherId"].as_i64().unwrap();
-    assert_ne!(first_voucher_id, second_voucher_id, "re-post should replace the stale voucher");
+    assert_ne!(
+        first_voucher_id, second_voucher_id,
+        "re-post should replace the stale voucher"
+    );
 
     let first_voucher_still_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vouchers WHERE id = $1)").bind(first_voucher_id).fetch_one(&pool).await.unwrap();
-    assert!(!first_voucher_still_exists, "the stale voucher must be gone, not duplicated alongside the new one");
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vouchers WHERE id = $1)")
+            .bind(first_voucher_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        !first_voucher_still_exists,
+        "the stale voucher must be gone, not duplicated alongside the new one"
+    );
 
     let voucher_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM vouchers WHERE tenant_id = $1 AND id IN (SELECT posted_voucher_id FROM inventory_documents WHERE id = $2)",
@@ -381,17 +565,44 @@ async fn narration_is_accurate_and_distinct_per_type(pool: PgPool) -> sqlx::Resu
         .await;
         let document_id = json_body(resp).await["id"].as_i64().unwrap();
         req(
-            &router, "POST", &format!("/api/v1/inventory-documents/{document_id}/lines"), &f.token,
+            &router,
+            "POST",
+            &format!("/api/v1/inventory-documents/{document_id}/lines"),
+            &f.token,
             json!({ "itemId": f.item_id, "quantity": "1", "unitPrice": 10_000 }),
         )
         .await;
-        req(&router, "POST", &format!("/api/v1/inventory-documents/{document_id}/post"), &f.token, Value::Null).await;
-        let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{document_id}"), &f.token, Value::Null).await;
+        req(
+            &router,
+            "POST",
+            &format!("/api/v1/inventory-documents/{document_id}/post"),
+            &f.token,
+            Value::Null,
+        )
+        .await;
+        let resp = req(
+            &router,
+            "GET",
+            &format!("/api/v1/inventory-documents/{document_id}"),
+            &f.token,
+            Value::Null,
+        )
+        .await;
         let voucher_id = json_body(resp).await["postedVoucherId"].as_i64().unwrap();
         let description: String =
-            sqlx::query_scalar("SELECT description FROM vouchers WHERE id = $1").bind(voucher_id).fetch_one(&pool).await.unwrap();
-        assert!(!description.to_lowercase().contains("goods sale"), "must not be the legacy's shared label");
-        assert!(narrations.insert(description), "narration must be distinct per document type");
+            sqlx::query_scalar("SELECT description FROM vouchers WHERE id = $1")
+                .bind(voucher_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(
+            !description.to_lowercase().contains("goods sale"),
+            "must not be the legacy's shared label"
+        );
+        assert!(
+            narrations.insert(description),
+            "narration must be distinct per document type"
+        );
     }
     assert_eq!(narrations.len(), 4);
     Ok(())

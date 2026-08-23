@@ -50,7 +50,10 @@ fn retention_count() -> i64 {
 }
 
 fn internal_error(msg: impl std::fmt::Display) -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": msg.to_string() })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": msg.to_string() })),
+    )
 }
 
 /// Runs one `pg_dump`, records it in `backups`, and applies retention. Shared by the on-demand
@@ -58,11 +61,20 @@ fn internal_error(msg: impl std::fmt::Display) -> (StatusCode, Json<Value>) {
 /// implementation, two callers, per this module's own "not smuggled into a request" framing: the
 /// scheduled caller runs on a `tokio::time::interval`, never inside a login or any other user
 /// request.
-pub async fn run_backup(pool: &PgPool, trigger: &str, created_by: Option<i64>) -> Result<i64, String> {
+pub async fn run_backup(
+    pool: &PgPool,
+    trigger: &str,
+    created_by: Option<i64>,
+) -> Result<i64, String> {
     let dir = backup_dir();
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| format!("cannot create backup dir: {e}"))?;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("cannot create backup dir: {e}"))?;
 
-    let filename = format!("arzi-{}.dump", chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ"));
+    let filename = format!(
+        "arzi-{}.dump",
+        chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ")
+    );
     let path = dir.join(&filename);
 
     let id: i64 = sqlx::query_scalar(
@@ -75,7 +87,8 @@ pub async fn run_backup(pool: &PgPool, trigger: &str, created_by: Option<i64>) -
     .await
     .map_err(|e| format!("cannot record backup start: {e}"))?;
 
-    let database_url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL not set".to_string())?;
+    let database_url =
+        std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL not set".to_string())?;
     let output = tokio::process::Command::new("pg_dump")
         .arg(&database_url)
         .arg("-Fc") // custom format: compressed, restorable with pg_restore, matches scripts/restore-backup.sh
@@ -86,7 +99,10 @@ pub async fn run_backup(pool: &PgPool, trigger: &str, created_by: Option<i64>) -
 
     match output {
         Ok(out) if out.status.success() => {
-            let size = tokio::fs::metadata(&path).await.map(|m| m.len() as i64).unwrap_or(0);
+            let size = tokio::fs::metadata(&path)
+                .await
+                .map(|m| m.len() as i64)
+                .unwrap_or(0);
             sqlx::query(
                 "UPDATE backups SET status = 'completed', size_bytes = $1, completed_at = now() WHERE id = $2",
             )
@@ -137,7 +153,10 @@ async fn apply_retention(pool: &PgPool, dir: &std::path::Path) {
 
     for (id, filename) in stale {
         let _ = tokio::fs::remove_file(dir.join(&filename)).await;
-        let _ = sqlx::query("DELETE FROM backups WHERE id = $1").bind(id).execute(pool).await;
+        let _ = sqlx::query("DELETE FROM backups WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await;
     }
 }
 
@@ -193,13 +212,24 @@ async fn list_backups(
 
     let items: Vec<Value> = rows
         .into_iter()
-        .map(|(id, filename, status, size_bytes, error_message, trigger, started_at, completed_at)| {
-            json!({
-                "id": id, "filename": filename, "status": status, "sizeBytes": size_bytes,
-                "errorMessage": error_message, "trigger": trigger,
-                "startedAt": started_at, "completedAt": completed_at,
-            })
-        })
+        .map(
+            |(
+                id,
+                filename,
+                status,
+                size_bytes,
+                error_message,
+                trigger,
+                started_at,
+                completed_at,
+            )| {
+                json!({
+                    "id": id, "filename": filename, "status": status, "sizeBytes": size_bytes,
+                    "errorMessage": error_message, "trigger": trigger,
+                    "startedAt": started_at, "completedAt": completed_at,
+                })
+            },
+        )
         .collect();
     Ok(Json(json!({ "items": items })))
 }
@@ -215,17 +245,32 @@ async fn download_backup(
             .fetch_optional(&state.pool)
             .await
             .map_err(internal_error)?;
-    let (filename, status) = row.ok_or((StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))))?;
+    let (filename, status) =
+        row.ok_or((StatusCode::NOT_FOUND, Json(json!({ "error": "not_found" }))))?;
     if status != "completed" {
-        return Err((StatusCode::CONFLICT, Json(json!({ "error": "backup_not_completed" }))));
+        return Err((
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "backup_not_completed" })),
+        ));
     }
     let bytes = tokio::fs::read(backup_dir().join(&filename))
         .await
-        .map_err(|e| (StatusCode::NOT_FOUND, Json(json!({ "error": format!("file missing on disk: {e}") }))))?;
+        .map_err(|e| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": format!("file missing on disk: {e}") })),
+            )
+        })?;
     Ok((
         [
-            (axum::http::header::CONTENT_TYPE, "application/octet-stream".to_string()),
-            (axum::http::header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}\"")),
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/octet-stream".to_string(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}\""),
+            ),
         ],
         bytes,
     )
@@ -248,7 +293,9 @@ async fn set_platform_admin(
     Path(user_id): Path<i64>,
     Json(req): Json<GrantPlatformAdminRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = crate::db::begin(&state.pool, auth.tenant_id).await.map_err(internal_error)?;
+    let mut tx = crate::db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(internal_error)?;
     let result = sqlx::query("UPDATE users SET is_platform_admin = $1 WHERE id = $2")
         .bind(req.grant)
         .bind(user_id)
@@ -256,7 +303,10 @@ async fn set_platform_admin(
         .await
         .map_err(internal_error)?;
     if result.rows_affected() == 0 {
-        return Err((StatusCode::NOT_FOUND, Json(json!({ "error": "user_not_found" }))));
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "user_not_found" })),
+        ));
     }
     tx.commit().await.map_err(internal_error)?;
     Ok(StatusCode::NO_CONTENT)

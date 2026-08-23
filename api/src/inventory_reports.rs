@@ -67,7 +67,10 @@ pub fn router() -> Router<AppState> {
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -195,7 +198,9 @@ async fn get_inventory_activity(
     if params.from_date > params.to_date {
         return Err(bad_request("date_range_inverted"));
     }
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     // 05-13-b.md §13.10's own "Order by AFD_Date, AFD_Factor" for line
     // detail; grouped shapes order by the grouping key(s).
@@ -212,10 +217,11 @@ async fn get_inventory_activity(
                  WHERE {ACTIVITY_PREDICATE} \
                  ORDER BY d.document_date, d.document_number"
             );
-            let rows: Vec<ActivityDetailRow> = bind_activity_params!(sqlx::query_as(&sql), params, auth)
-                .fetch_all(&mut *tx)
-                .await
-                .map_err(|_| internal_error())?;
+            let rows: Vec<ActivityDetailRow> =
+                bind_activity_params!(sqlx::query_as(&sql), params, auth)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|_| internal_error())?;
             serde_json::to_value(rows).unwrap()
         }
         "date" => {
@@ -227,10 +233,11 @@ async fn get_inventory_activity(
                  WHERE {ACTIVITY_PREDICATE} \
                  GROUP BY d.document_date ORDER BY d.document_date"
             );
-            let rows: Vec<ActivityDateRow> = bind_activity_params!(sqlx::query_as(&sql), params, auth)
-                .fetch_all(&mut *tx)
-                .await
-                .map_err(|_| internal_error())?;
+            let rows: Vec<ActivityDateRow> =
+                bind_activity_params!(sqlx::query_as(&sql), params, auth)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|_| internal_error())?;
             serde_json::to_value(rows).unwrap()
         }
         "item" => {
@@ -242,10 +249,11 @@ async fn get_inventory_activity(
                  WHERE {ACTIVITY_PREDICATE} \
                  GROUP BY l.item_id, i.code, i.name ORDER BY i.code"
             );
-            let rows: Vec<ActivityItemRow> = bind_activity_params!(sqlx::query_as(&sql), params, auth)
-                .fetch_all(&mut *tx)
-                .await
-                .map_err(|_| internal_error())?;
+            let rows: Vec<ActivityItemRow> =
+                bind_activity_params!(sqlx::query_as(&sql), params, auth)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|_| internal_error())?;
             serde_json::to_value(rows).unwrap()
         }
         "date_item" => {
@@ -258,10 +266,11 @@ async fn get_inventory_activity(
                  WHERE {ACTIVITY_PREDICATE} \
                  GROUP BY d.document_date, l.item_id, i.code, i.name ORDER BY d.document_date, i.code"
             );
-            let rows: Vec<ActivityDateItemRow> = bind_activity_params!(sqlx::query_as(&sql), params, auth)
-                .fetch_all(&mut *tx)
-                .await
-                .map_err(|_| internal_error())?;
+            let rows: Vec<ActivityDateItemRow> =
+                bind_activity_params!(sqlx::query_as(&sql), params, auth)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|_| internal_error())?;
             serde_json::to_value(rows).unwrap()
         }
         _ => return Err(bad_request("invalid_group_by")),
@@ -323,7 +332,9 @@ async fn get_stock_balance(
     Query(params): Query<StockBalanceQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     authz::require(&auth, "inventory_balance_report")?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     // A correlated subquery, not a LEFT JOIN aggregate: `inventory_document_lines` has no
     // fiscal-year/date filter of its own, so joining it to `items` unconditionally and only

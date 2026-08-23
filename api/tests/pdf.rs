@@ -21,10 +21,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -73,7 +74,12 @@ async fn seed(pool: &PgPool) -> Fixture {
     .fetch_one(pool)
     .await
     .unwrap();
-    Fixture { tenant_id, fiscal_year_id, token, cash_account_id }
+    Fixture {
+        tenant_id,
+        fiscal_year_id,
+        token,
+        cash_account_id,
+    }
 }
 
 fn cookie(token: &str) -> String {
@@ -81,7 +87,9 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -143,8 +151,14 @@ async fn voucher_pdf_renders_with_structured_header(pool: PgPool) -> sqlx::Resul
                 .unwrap()
         }
     };
-    assert_eq!(add_line(fx.cash_account_id, 1_500_000, 0).await.status(), StatusCode::CREATED);
-    assert_eq!(add_line(sales, 0, 1_500_000).await.status(), StatusCode::CREATED);
+    assert_eq!(
+        add_line(fx.cash_account_id, 1_500_000, 0).await.status(),
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        add_line(sales, 0, 1_500_000).await.status(),
+        StatusCode::CREATED
+    );
 
     let pdf_resp = router
         .oneshot(
@@ -156,9 +170,17 @@ async fn voucher_pdf_renders_with_structured_header(pool: PgPool) -> sqlx::Resul
         .await
         .unwrap();
     assert_eq!(pdf_resp.status(), StatusCode::OK);
-    assert_eq!(pdf_resp.headers().get(header::CONTENT_TYPE).unwrap(), "application/pdf");
-    let bytes = axum::body::to_bytes(pdf_resp.into_body(), usize::MAX).await.unwrap();
-    assert!(bytes.starts_with(b"%PDF-"), "response body must be a real PDF");
+    assert_eq!(
+        pdf_resp.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/pdf"
+    );
+    let bytes = axum::body::to_bytes(pdf_resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert!(
+        bytes.starts_with(b"%PDF-"),
+        "response body must be a real PDF"
+    );
     assert!(bytes.len() > 500);
 
     Ok(())
@@ -224,7 +246,10 @@ async fn trial_balance_pdf_renders(pool: PgPool) -> sqlx::Result<()> {
                 .unwrap()
         }
     };
-    assert_eq!(transition("confirmed").await.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        transition("confirmed").await.status(),
+        StatusCode::NO_CONTENT
+    );
     assert_eq!(transition("posted").await.status(), StatusCode::NO_CONTENT);
 
     let pdf_resp = router
@@ -240,8 +265,13 @@ async fn trial_balance_pdf_renders(pool: PgPool) -> sqlx::Result<()> {
         .await
         .unwrap();
     assert_eq!(pdf_resp.status(), StatusCode::OK);
-    assert_eq!(pdf_resp.headers().get(header::CONTENT_TYPE).unwrap(), "application/pdf");
-    let bytes = axum::body::to_bytes(pdf_resp.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(
+        pdf_resp.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/pdf"
+    );
+    let bytes = axum::body::to_bytes(pdf_resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     assert!(bytes.starts_with(b"%PDF-"));
 
     Ok(())
@@ -270,8 +300,13 @@ async fn pdf_routes_accept_no_template_selection_parameter(pool: PgPool) -> sqlx
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    assert!(bytes.starts_with(b"%PDF-"), "still renders via the one built-in template, ignoring the parameter");
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert!(
+        bytes.starts_with(b"%PDF-"),
+        "still renders via the one built-in template, ignoring the parameter"
+    );
 
     Ok(())
 }

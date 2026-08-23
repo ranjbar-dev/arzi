@@ -103,7 +103,10 @@ pub fn router() -> Router<AppState> {
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -229,7 +232,9 @@ async fn any_segment_locked(
         .fetch_one(&mut **tx)
         .await;
     }
-    let kol = filter.kol.expect("build_filter always sets kol when ids is None");
+    let kol = filter
+        .kol
+        .expect("build_filter always sets kol when ids is None");
     sqlx::query_scalar(
         "SELECT COALESCE(bool_or(is_locked), false) FROM accounts \
          WHERE tenant_id = $1 AND general_ledger_code = $2 AND ( \
@@ -286,7 +291,13 @@ fn build_filter(params: &LedgerQuery) -> Result<AccountFilter, (StatusCode, Json
         if ids.is_empty() {
             return Err(bad_request("invalid_account_ids"));
         }
-        return Ok(AccountFilter { kol: None, moein: None, tafsil1: None, tafsil2: None, ids: Some(ids) });
+        return Ok(AccountFilter {
+            kol: None,
+            moein: None,
+            tafsil1: None,
+            tafsil2: None,
+            ids: Some(ids),
+        });
     }
     let Some(kol) = params.general_ledger_code else {
         return Err(bad_request("general_ledger_code_required"));
@@ -314,10 +325,14 @@ async fn get_ledger(
         return Err(bad_request("date_range_inverted"));
     }
     let filter = build_filter(&params)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     if !auth.is_superuser {
-        let locked = any_segment_locked(&mut tx, auth.tenant_id, &filter).await.map_err(|_| internal_error())?;
+        let locked = any_segment_locked(&mut tx, auth.tenant_id, &filter)
+            .await
+            .map_err(|_| internal_error())?;
         if locked {
             tx.rollback().await.ok();
             // The legacy's own refusal message is wrong about its own rule
@@ -326,12 +341,25 @@ async fn get_ledger(
         }
     }
 
-    let opening = fetch_opening(&mut tx, auth.tenant_id, &filter, params.fiscal_year_id, params.from_date)
-        .await
-        .map_err(|_| internal_error())?;
-    let movement = fetch_movement(&mut tx, auth.tenant_id, &filter, params.fiscal_year_id, params.from_date, params.to_date)
-        .await
-        .map_err(|_| internal_error())?;
+    let opening = fetch_opening(
+        &mut tx,
+        auth.tenant_id,
+        &filter,
+        params.fiscal_year_id,
+        params.from_date,
+    )
+    .await
+    .map_err(|_| internal_error())?;
+    let movement = fetch_movement(
+        &mut tx,
+        auth.tenant_id,
+        &filter,
+        params.fiscal_year_id,
+        params.from_date,
+        params.to_date,
+    )
+    .await
+    .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
 
     let mut running = opening;
@@ -390,7 +418,9 @@ async fn get_party_balances(
     if params.from_date > params.to_date {
         return Err(bad_request("date_range_inverted"));
     }
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let configs: Vec<ConfigRow> = fetch_all_config(&mut tx, auth.tenant_id)
         .await
@@ -427,13 +457,32 @@ async fn get_party_balances(
             else {
                 continue; // no leaf provisioned at this coordinate -> contributes nothing
             };
-            let filter = AccountFilter { kol: None, moein: None, tafsil1: None, tafsil2: None, ids: Some(vec![account_id]) };
-            let opening = fetch_opening(&mut tx, auth.tenant_id, &filter, params.fiscal_year_id, params.from_date)
-                .await
-                .map_err(|_| internal_error())?;
-            let movement = fetch_movement(&mut tx, auth.tenant_id, &filter, params.fiscal_year_id, params.from_date, params.to_date)
-                .await
-                .map_err(|_| internal_error())?;
+            let filter = AccountFilter {
+                kol: None,
+                moein: None,
+                tafsil1: None,
+                tafsil2: None,
+                ids: Some(vec![account_id]),
+            };
+            let opening = fetch_opening(
+                &mut tx,
+                auth.tenant_id,
+                &filter,
+                params.fiscal_year_id,
+                params.from_date,
+            )
+            .await
+            .map_err(|_| internal_error())?;
+            let movement = fetch_movement(
+                &mut tx,
+                auth.tenant_id,
+                &filter,
+                params.fiscal_year_id,
+                params.from_date,
+                params.to_date,
+            )
+            .await
+            .map_err(|_| internal_error())?;
             opening_total += opening;
             for m in &movement {
                 period_debit_total += m.debit_amount;

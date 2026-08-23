@@ -61,7 +61,10 @@ pub(crate) mod permcodes {
     }
 }
 
-pub(crate) fn require_permission(auth: &AuthUser, code: &str) -> Result<(), (StatusCode, Json<Value>)> {
+pub(crate) fn require_permission(
+    auth: &AuthUser,
+    code: &str,
+) -> Result<(), (StatusCode, Json<Value>)> {
     if auth.has_permission(code) {
         Ok(())
     } else {
@@ -70,10 +73,16 @@ pub(crate) fn require_permission(auth: &AuthUser, code: &str) -> Result<(), (Sta
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn not_found(what: &str) -> (StatusCode, Json<Value>) {
-    (StatusCode::NOT_FOUND, Json(json!({ "error": format!("{what}_not_found") })))
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": format!("{what}_not_found") })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -84,7 +93,10 @@ fn forbidden(error: &str) -> (StatusCode, Json<Value>) {
 fn conflict_or_internal(err: sqlx::Error) -> (StatusCode, Json<Value>) {
     if let sqlx::Error::Database(db_err) = &err {
         if db_err.constraint() == Some("inventory_documents_number_key") {
-            return (StatusCode::CONFLICT, Json(json!({ "error": "duplicate_document_number" })));
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({ "error": "duplicate_document_number" })),
+            );
         }
     }
     internal_error()
@@ -93,12 +105,26 @@ fn conflict_or_internal(err: sqlx::Error) -> (StatusCode, Json<Value>) {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_documents).post(create_document))
-        .route("/{id}", get(get_document).put(update_document).delete(delete_document))
+        .route(
+            "/{id}",
+            get(get_document)
+                .put(update_document)
+                .delete(delete_document),
+        )
         .route("/{id}/lines", post(add_line))
-        .route("/{id}/lines/{line_id}", axum::routing::put(update_line).delete(delete_line))
-        .route("/{id}/lines/pistachio", post(crate::pistachio::create_pistachio_line))
+        .route(
+            "/{id}/lines/{line_id}",
+            axum::routing::put(update_line).delete(delete_line),
+        )
+        .route(
+            "/{id}/lines/pistachio",
+            post(crate::pistachio::create_pistachio_line),
+        )
         .route("/{id}/settlement", get(crate::settlement::get_settlement))
-        .route("/{id}/post", post(crate::inventory_posting::post_document_handler))
+        .route(
+            "/{id}/post",
+            post(crate::inventory_posting::post_document_handler),
+        )
 }
 
 #[derive(sqlx::FromRow, Serialize, Clone)]
@@ -232,7 +258,9 @@ async fn list_documents(
     auth: AuthUser,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<DocumentRecord>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let rows = sqlx::query_as(&format!(
         "SELECT {DOCUMENT_COLUMNS} FROM inventory_documents WHERE tenant_id = $1 \
          AND ($2::bigint IS NULL OR fiscal_year_id = $2) \
@@ -266,8 +294,12 @@ async fn get_document(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<DocumentDetail>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("document"));
     };
@@ -307,8 +339,14 @@ struct CreateDocumentRequest {
     destination_warehouse_id: Option<i64>,
 }
 
-const VALID_TYPES: [&str; 6] =
-    ["receipt", "issue", "purchase_return", "sales_return", "production", "transfer"];
+const VALID_TYPES: [&str; 6] = [
+    "receipt",
+    "issue",
+    "purchase_return",
+    "sales_return",
+    "production",
+    "transfer",
+];
 const COMMERCIAL_TYPES: [&str; 4] = ["receipt", "issue", "purchase_return", "sales_return"];
 
 /// §4.2.1's create preconditions: fiscal year open (checked below via `fiscal_year_gate`),
@@ -326,10 +364,14 @@ async fn create_document(
     }
     require_permission(&auth, permcodes::create_code(&req.document_type))?;
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let Some((is_active, start_date, end_date)) =
-        fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id).await.map_err(|_| internal_error())?
+        fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id)
+            .await
+            .map_err(|_| internal_error())?
     else {
         return Err(not_found("fiscal_year"));
     };
@@ -351,13 +393,14 @@ async fn create_document(
         return Err(bad_request("counterparty_not_applicable")); // production/transfer: no external party
     }
 
-    let warehouse_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM warehouses WHERE tenant_id = $1 AND id = $2)")
-            .bind(auth.tenant_id)
-            .bind(req.warehouse_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|_| internal_error())?;
+    let warehouse_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM warehouses WHERE tenant_id = $1 AND id = $2)",
+    )
+    .bind(auth.tenant_id)
+    .bind(req.warehouse_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
     if !warehouse_exists {
         return Err(bad_request("warehouse_not_found"));
     }
@@ -370,13 +413,14 @@ async fn create_document(
         if destination_id == req.warehouse_id {
             return Err(bad_request("destination_warehouse_must_differ"));
         }
-        let destination_exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM warehouses WHERE tenant_id = $1 AND id = $2)")
-                .bind(auth.tenant_id)
-                .bind(destination_id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|_| internal_error())?;
+        let destination_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM warehouses WHERE tenant_id = $1 AND id = $2)",
+        )
+        .bind(auth.tenant_id)
+        .bind(destination_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|_| internal_error())?;
         if !destination_exists {
             return Err(bad_request("destination_warehouse_not_found"));
         }
@@ -423,7 +467,13 @@ async fn create_document(
     .map_err(conflict_or_internal)?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "inventory_documents", id, "insert", Some(auth.user_id), None,
+        &mut tx,
+        auth.tenant_id,
+        "inventory_documents",
+        id,
+        "insert",
+        Some(auth.user_id),
+        None,
         Some(json!({ "documentType": req.document_type, "documentNumber": document_number })),
     )
     .await
@@ -462,8 +512,12 @@ async fn update_document(
     Json(req): Json<UpdateDocumentRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     require_permission(&auth, permcodes::AMEND)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("document"));
     };
@@ -472,7 +526,9 @@ async fn update_document(
     }
 
     let Some((is_active, start_date, end_date)) =
-        fiscal_year_gate(&mut tx, auth.tenant_id, document.fiscal_year_id).await.map_err(|_| internal_error())?
+        fiscal_year_gate(&mut tx, auth.tenant_id, document.fiscal_year_id)
+            .await
+            .map_err(|_| internal_error())?
     else {
         return Err(internal_error());
     };
@@ -491,13 +547,14 @@ async fn update_document(
         return Err(bad_request("counterparty_not_applicable"));
     }
 
-    let warehouse_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM warehouses WHERE tenant_id = $1 AND id = $2)")
-            .bind(auth.tenant_id)
-            .bind(req.warehouse_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|_| internal_error())?;
+    let warehouse_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM warehouses WHERE tenant_id = $1 AND id = $2)",
+    )
+    .bind(auth.tenant_id)
+    .bind(req.warehouse_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
     if !warehouse_exists {
         return Err(bad_request("warehouse_not_found"));
     }
@@ -518,7 +575,12 @@ async fn update_document(
     .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "inventory_documents", id, "update", Some(auth.user_id),
+        &mut tx,
+        auth.tenant_id,
+        "inventory_documents",
+        id,
+        "update",
+        Some(auth.user_id),
         Some(json!({ "counterpartyAccountId": document.counterparty_account_id })),
         Some(json!({ "counterpartyAccountId": req.counterparty_account_id })),
     )
@@ -543,8 +605,12 @@ async fn delete_document(
     Path(id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     require_permission(&auth, permcodes::DELETE)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("document"));
     };
@@ -642,7 +708,12 @@ fn compute_line_amounts(
         None => discount_amount,
     };
     let total = gross + tax - discount;
-    LineAmounts { gross, discount, tax, total }
+    LineAmounts {
+        gross,
+        discount,
+        tax,
+        total,
+    }
 }
 
 async fn validate_line_request(
@@ -661,8 +732,10 @@ async fn validate_line_request(
         if req.discount_amount != 0 {
             return Err(bad_request("ambiguous_discount_entry")); // §7.2: pick one entry mode, not both
         }
-        #[allow(clippy::cmp_owned)] // comparing an operator-entered percentage against the 0..=100 range
-        let out_of_range = pct.sign() == bigdecimal::num_bigint::Sign::Minus || *pct > bigdecimal::BigDecimal::from(100);
+        #[allow(clippy::cmp_owned)]
+        // comparing an operator-entered percentage against the 0..=100 range
+        let out_of_range = pct.sign() == bigdecimal::num_bigint::Sign::Minus
+            || *pct > bigdecimal::BigDecimal::from(100);
         if out_of_range {
             return Err(bad_request("invalid_discount_percent")); // §7.2: KasrD's own 0.00-99.99 range
         }
@@ -742,8 +815,12 @@ async fn add_line(
     Json(req): Json<LineRequest>,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
     require_permission(&auth, permcodes::AMEND)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("document"));
     };
@@ -752,12 +829,23 @@ async fn add_line(
     }
     validate_line_request(&mut tx, auth.tenant_id, &req).await?;
     let amounts = compute_line_amounts(
-        &req.quantity, req.unit_price, req.discount_amount, req.discount_percent.as_ref(), req.tax_amount,
+        &req.quantity,
+        req.unit_price,
+        req.discount_amount,
+        req.discount_percent.as_ref(),
+        req.tax_amount,
     );
 
     let line_id = insert_line_and_bump_totals(
-        &mut tx, auth.tenant_id, &document, req.item_id, &req.quantity, req.unit_price, &amounts,
-        req.description.as_deref().map(str::trim), auth.user_id,
+        &mut tx,
+        auth.tenant_id,
+        &document,
+        req.item_id,
+        &req.quantity,
+        req.unit_price,
+        &amounts,
+        req.description.as_deref().map(str::trim),
+        auth.user_id,
     )
     .await
     .map_err(|_| internal_error())?;
@@ -780,21 +868,31 @@ async fn update_line(
     Json(req): Json<LineRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     require_permission(&auth, permcodes::AMEND)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("document"));
     };
     if document.status == "frozen" {
         return Err(bad_request("document_frozen"));
     }
-    let Some(line) = fetch_line(&mut tx, auth.tenant_id, id, line_id).await.map_err(|_| internal_error())?
+    let Some(line) = fetch_line(&mut tx, auth.tenant_id, id, line_id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("line"));
     };
     validate_line_request(&mut tx, auth.tenant_id, &req).await?;
     let amounts = compute_line_amounts(
-        &req.quantity, req.unit_price, req.discount_amount, req.discount_percent.as_ref(), req.tax_amount,
+        &req.quantity,
+        req.unit_price,
+        req.discount_amount,
+        req.discount_percent.as_ref(),
+        req.tax_amount,
     );
 
     sqlx::query(
@@ -836,8 +934,14 @@ async fn update_line(
     .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "inventory_document_lines", line_id, "update", Some(auth.user_id),
-        Some(json!({ "totalAmount": line.total_amount })), Some(json!({ "totalAmount": amounts.total })),
+        &mut tx,
+        auth.tenant_id,
+        "inventory_document_lines",
+        line_id,
+        "update",
+        Some(auth.user_id),
+        Some(json!({ "totalAmount": line.total_amount })),
+        Some(json!({ "totalAmount": amounts.total })),
     )
     .await
     .map_err(|_| internal_error())?;
@@ -852,15 +956,21 @@ async fn delete_line(
     Path((id, line_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     require_permission(&auth, permcodes::AMEND)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(document) = fetch_document(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("document"));
     };
     if document.status == "frozen" {
         return Err(bad_request("document_frozen"));
     }
-    let Some(line) = fetch_line(&mut tx, auth.tenant_id, id, line_id).await.map_err(|_| internal_error())?
+    let Some(line) = fetch_line(&mut tx, auth.tenant_id, id, line_id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("line"));
     };
@@ -887,8 +997,14 @@ async fn delete_line(
     .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "inventory_document_lines", line_id, "delete", Some(auth.user_id),
-        Some(json!({ "totalAmount": line.total_amount })), None,
+        &mut tx,
+        auth.tenant_id,
+        "inventory_document_lines",
+        line_id,
+        "delete",
+        Some(auth.user_id),
+        Some(json!({ "totalAmount": line.total_amount })),
+        None,
     )
     .await
     .map_err(|_| internal_error())?;

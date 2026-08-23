@@ -46,19 +46,34 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn req(router: &axum::Router, method: &str, path: &str, token: &str, body: Value) -> axum::response::Response {
-    let mut builder = Request::builder().method(method).uri(path).header(header::COOKIE, cookie(token));
+async fn req(
+    router: &axum::Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Value,
+) -> axum::response::Response {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::COOKIE, cookie(token));
     let b = if body.is_null() {
         Body::empty()
     } else {
         builder = builder.header(header::CONTENT_TYPE, "application/json");
         Body::from(body.to_string())
     };
-    router.clone().oneshot(builder.body(b).unwrap()).await.unwrap()
+    router
+        .clone()
+        .oneshot(builder.body(b).unwrap())
+        .await
+        .unwrap()
 }
 
 async fn seed_fiscal_year(pool: &PgPool, tenant_id: i64) -> i64 {
@@ -109,7 +124,10 @@ async fn setup(pool: &PgPool) -> Fixture {
         seed_leaf_account(pool, tenant_id, 902, 2, "VAT").await,
     ];
     let resp = req(
-        &router, "POST", "/api/v1/warehouses", &token,
+        &router,
+        "POST",
+        "/api/v1/warehouses",
+        &token,
         json!({
             "name": "Main", "vatRatePct": "9",
             "purchaseAccountId": accounts[0], "purchaseReturnAccountId": accounts[1],
@@ -121,7 +139,14 @@ async fn setup(pool: &PgPool) -> Fixture {
     let warehouse_id = json_body(resp).await["id"].as_i64().unwrap();
     let counterparty_id = seed_leaf_account(pool, tenant_id, 103, 1, "Trade AR").await;
 
-    let resp = req(&router, "POST", "/api/v1/units-of-measure", &token, json!({ "name": "kg" })).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/units-of-measure",
+        &token,
+        json!({ "name": "kg" }),
+    )
+    .await;
     let uom_id = json_body(resp).await["id"].as_i64().unwrap();
     let resp = req(
         &router, "POST", "/api/v1/items", &token,
@@ -130,37 +155,68 @@ async fn setup(pool: &PgPool) -> Fixture {
     .await;
     let item_id = json_body(resp).await["id"].as_i64().unwrap();
 
-    Fixture { token, fiscal_year_id, warehouse_id, counterparty_id, item_id }
+    Fixture {
+        token,
+        fiscal_year_id,
+        warehouse_id,
+        counterparty_id,
+        item_id,
+    }
 }
 
 /// Creates a draft document of `document_type` on `date` with one line of `quantity` for the
 /// fixture's item, and returns the document id.
-async fn post_movement(router: &axum::Router, f: &Fixture, document_type: &str, date: &str, quantity: &str) -> i64 {
+async fn post_movement(
+    router: &axum::Router,
+    f: &Fixture,
+    document_type: &str,
+    date: &str,
+    quantity: &str,
+) -> i64 {
     let resp = req(
-        router, "POST", "/api/v1/inventory-documents", &f.token,
+        router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
         json!({
             "fiscalYearId": f.fiscal_year_id, "documentType": document_type, "documentDate": date,
             "warehouseId": f.warehouse_id, "counterpartyAccountId": f.counterparty_id,
         }),
     )
     .await;
-    assert_eq!(resp.status(), StatusCode::CREATED, "create {document_type} on {date}");
+    assert_eq!(
+        resp.status(),
+        StatusCode::CREATED,
+        "create {document_type} on {date}"
+    );
     let doc_id = json_body(resp).await["id"].as_i64().unwrap();
 
     let resp = req(
-        router, "POST", &format!("/api/v1/inventory-documents/{doc_id}/lines"), &f.token,
+        router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{doc_id}/lines"),
+        &f.token,
         json!({ "itemId": f.item_id, "quantity": quantity, "unitPrice": 10000 }),
     )
     .await;
-    assert_eq!(resp.status(), StatusCode::CREATED, "add line to {document_type}");
+    assert_eq!(
+        resp.status(),
+        StatusCode::CREATED,
+        "add line to {document_type}"
+    );
     doc_id
 }
 
 async fn on_hand(router: &axum::Router, f: &Fixture, as_of: &str) -> Value {
     let resp = req(
-        router, "GET",
-        &format!("/api/v1/items/{}/on-hand?fiscalYearId={}&asOfDate={as_of}", f.item_id, f.fiscal_year_id),
-        &f.token, Value::Null,
+        router,
+        "GET",
+        &format!(
+            "/api/v1/items/{}/on-hand?fiscalYearId={}&asOfDate={as_of}",
+            f.item_id, f.fiscal_year_id
+        ),
+        &f.token,
+        Value::Null,
     )
     .await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -235,12 +291,14 @@ async fn stock_card_running_balance_matches_on_hand(pool: PgPool) -> sqlx::Resul
 
     // Window starts after the first receipt -- opening balance must reflect it, not be zero.
     let resp = req(
-        &router, "GET",
+        &router,
+        "GET",
         &format!(
             "/api/v1/items/{}/stock-card?fiscalYearId={}&fromDate=2027-04-05&toDate=2027-04-20",
             f.item_id, f.fiscal_year_id
         ),
-        &f.token, Value::Null,
+        &f.token,
+        Value::Null,
     )
     .await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -261,7 +319,9 @@ async fn stock_card_running_balance_matches_on_hand(pool: PgPool) -> sqlx::Resul
 /// Closes 5.1's deferred manual test #4: bringing on-hand below min_stock produces a real
 /// `isLowStock` alert, not just a passive number next to the balance.
 #[sqlx::test(migrations = "./migrations")]
-async fn low_stock_alert_fires_when_on_hand_drops_below_threshold(pool: PgPool) -> sqlx::Result<()> {
+async fn low_stock_alert_fires_when_on_hand_drops_below_threshold(
+    pool: PgPool,
+) -> sqlx::Result<()> {
     let f = setup(&pool).await; // min_stock = 50
     let router = app(AppState { pool: pool.clone() });
 

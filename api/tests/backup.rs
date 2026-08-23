@@ -24,7 +24,12 @@ async fn seed_tenant(pool: &PgPool) -> i64 {
 
 static NEXT_USERNAME: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-async fn make_user(pool: &PgPool, tenant_id: i64, superuser: bool, platform_admin: bool) -> (i64, String) {
+async fn make_user(
+    pool: &PgPool,
+    tenant_id: i64,
+    superuser: bool,
+    platform_admin: bool,
+) -> (i64, String) {
     let n = NEXT_USERNAME.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let username = format!("u{n}");
     let user_id: i64 = sqlx::query_scalar(
@@ -56,19 +61,34 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn req(router: &axum::Router, method: &str, path: &str, token: &str, body: Value) -> axum::response::Response {
-    let mut builder = Request::builder().method(method).uri(path).header(header::COOKIE, cookie(token));
+async fn req(
+    router: &axum::Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Value,
+) -> axum::response::Response {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::COOKIE, cookie(token));
     let b = if body.is_null() {
         Body::empty()
     } else {
         builder = builder.header(header::CONTENT_TYPE, "application/json");
         Body::from(body.to_string())
     };
-    router.clone().oneshot(builder.body(b).unwrap()).await.unwrap()
+    router
+        .clone()
+        .oneshot(builder.body(b).unwrap())
+        .await
+        .unwrap()
 }
 
 /// The core of this step: a tenant's own superuser is NOT a platform admin. Reusing
@@ -79,10 +99,24 @@ async fn tenant_superuser_is_not_a_platform_admin(pool: PgPool) -> sqlx::Result<
     let (_, superuser_token) = make_user(&pool, tenant_id, true, false).await;
     let router = app(AppState { pool: pool.clone() });
 
-    let resp = req(&router, "GET", "/api/v1/platform/backups", &superuser_token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        "/api/v1/platform/backups",
+        &superuser_token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
-    let resp = req(&router, "POST", "/api/v1/platform/backups", &superuser_token, Value::Null).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/platform/backups",
+        &superuser_token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     Ok(())
 }
@@ -95,10 +129,24 @@ async fn plain_user_and_anonymous_rejected(pool: PgPool) -> sqlx::Result<()> {
     let (_, plain_token) = make_user(&pool, tenant_id, false, false).await;
     let router = app(AppState { pool: pool.clone() });
 
-    let resp = req(&router, "GET", "/api/v1/platform/backups", &plain_token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        "/api/v1/platform/backups",
+        &plain_token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
-    let resp = req(&router, "GET", "/api/v1/platform/backups", "no-such-session", Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        "/api/v1/platform/backups",
+        "no-such-session",
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     Ok(())
 }
@@ -111,7 +159,14 @@ async fn platform_admin_can_list_backups(pool: PgPool) -> sqlx::Result<()> {
     let (_, admin_token) = make_user(&pool, tenant_id, false, true).await;
     let router = app(AppState { pool: pool.clone() });
 
-    let resp = req(&router, "GET", "/api/v1/platform/backups", &admin_token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        "/api/v1/platform/backups",
+        &admin_token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
     assert_eq!(body["items"].as_array().unwrap().len(), 0);
@@ -130,27 +185,45 @@ async fn grant_and_revoke_platform_admin(pool: PgPool) -> sqlx::Result<()> {
     // A plain user cannot grant.
     let (_, plain_token) = make_user(&pool, tenant_id, false, false).await;
     let resp = req(
-        &router, "PUT", &format!("/api/v1/platform/users/{target_id}/platform-admin"),
-        &plain_token, serde_json::json!({ "grant": true }),
-    ).await;
+        &router,
+        "PUT",
+        &format!("/api/v1/platform/users/{target_id}/platform-admin"),
+        &plain_token,
+        serde_json::json!({ "grant": true }),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 
     let resp = req(
-        &router, "PUT", &format!("/api/v1/platform/users/{target_id}/platform-admin"),
-        &admin_token, serde_json::json!({ "grant": true }),
-    ).await;
+        &router,
+        "PUT",
+        &format!("/api/v1/platform/users/{target_id}/platform-admin"),
+        &admin_token,
+        serde_json::json!({ "grant": true }),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     let is_admin: bool = sqlx::query_scalar("SELECT is_platform_admin FROM users WHERE id = $1")
-        .bind(target_id).fetch_one(&pool).await.unwrap();
+        .bind(target_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert!(is_admin);
 
     let resp = req(
-        &router, "PUT", &format!("/api/v1/platform/users/{target_id}/platform-admin"),
-        &admin_token, serde_json::json!({ "grant": false }),
-    ).await;
+        &router,
+        "PUT",
+        &format!("/api/v1/platform/users/{target_id}/platform-admin"),
+        &admin_token,
+        serde_json::json!({ "grant": false }),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     let is_admin: bool = sqlx::query_scalar("SELECT is_platform_admin FROM users WHERE id = $1")
-        .bind(target_id).fetch_one(&pool).await.unwrap();
+        .bind(target_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert!(!is_admin);
     Ok(())
 }
@@ -164,7 +237,14 @@ async fn download_guards_against_incomplete_backups(pool: PgPool) -> sqlx::Resul
     let (_, admin_token) = make_user(&pool, tenant_id, false, true).await;
     let router = app(AppState { pool: pool.clone() });
 
-    let resp = req(&router, "GET", "/api/v1/platform/backups/999999/download", &admin_token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        "/api/v1/platform/backups/999999/download",
+        &admin_token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 
     let running_id: i64 = sqlx::query_scalar(
@@ -173,7 +253,14 @@ async fn download_guards_against_incomplete_backups(pool: PgPool) -> sqlx::Resul
     .fetch_one(&pool)
     .await
     .unwrap();
-    let resp = req(&router, "GET", &format!("/api/v1/platform/backups/{running_id}/download"), &admin_token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/platform/backups/{running_id}/download"),
+        &admin_token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::CONFLICT);
     Ok(())
 }

@@ -43,7 +43,7 @@
 //! endpoint replaces the legacy's four separate list screens by status/kind
 //! — narrower than any single legacy screen, broader than none of them.
 
-use crate::{audit, db, auth::AuthUser, AppState};
+use crate::{audit, auth::AuthUser, db, AppState};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -63,7 +63,7 @@ mod permcodes {
         "list_draft_subsidiary_documents",    // 1127
         "list_approved_subsidiary_documents", // 1125
         "list_posted_subsidiary_documents",   // 1126
-        "journal_documents",                  // 1132 (group id — no per-status journal list id exists)
+        "journal_documents", // 1132 (group id — no per-status journal list id exists)
     ];
     pub const POST_LEDGER: &str = "post_subsidiary_document"; // 1113
     pub const POST_JOURNAL: &str = "post_journal_document"; // 1133 (generate_journal_voucher)
@@ -72,25 +72,45 @@ mod permcodes {
     /// (base "amend", date-change, number-change) codes for `update_voucher`.
     pub fn header_edit(kind: &str) -> (&'static str, &'static str, &'static str) {
         if kind == "daybook" {
-            ("change_journal_document_description", "change_journal_document_date", "change_journal_document_number")
+            (
+                "change_journal_document_description",
+                "change_journal_document_date",
+                "change_journal_document_number",
+            )
         } else {
-            ("amend_subsidiary_document", "change_subsidiary_document_date", "change_subsidiary_document_number")
+            (
+                "amend_subsidiary_document",
+                "change_subsidiary_document_date",
+                "change_subsidiary_document_number",
+            )
         }
     }
 
     pub fn delete(kind: &str) -> &'static str {
-        if kind == "daybook" { "delete_journal_document" } else { "delete_subsidiary_document" }
+        if kind == "daybook" {
+            "delete_journal_document"
+        } else {
+            "delete_subsidiary_document"
+        }
     }
 
     pub fn lock(kind: &str) -> &'static str {
-        if kind == "daybook" { "lock_journal_document" } else { "lock_subsidiary_document" }
+        if kind == "daybook" {
+            "lock_journal_document"
+        } else {
+            "lock_subsidiary_document"
+        }
     }
 
     /// Step 6.7: the catalogue's own dedicated print ids (1121/1140) — a
     /// PDF download is this rebuild's "print," per `pdf.rs`'s own module
     /// doc comment on `get_voucher_pdf`.
     pub fn print(kind: &str) -> &'static str {
-        if kind == "daybook" { "print_journal_document" } else { "print_subsidiary_document" }
+        if kind == "daybook" {
+            "print_journal_document"
+        } else {
+            "print_subsidiary_document"
+        }
     }
 
     /// `None` for a transition combination the state machine itself will
@@ -118,7 +138,10 @@ fn require_permission(auth: &AuthUser, code: &str) -> Result<(), (StatusCode, Js
     }
 }
 
-fn require_any_permission(auth: &AuthUser, codes: &[&str]) -> Result<(), (StatusCode, Json<Value>)> {
+fn require_any_permission(
+    auth: &AuthUser,
+    codes: &[&str],
+) -> Result<(), (StatusCode, Json<Value>)> {
     if codes.iter().any(|c| auth.has_permission(c)) {
         Ok(())
     } else {
@@ -133,10 +156,16 @@ fn forbidden_result<T>(error: &str) -> Result<T, (StatusCode, Json<Value>)> {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_vouchers).post(create_voucher))
-        .route("/{id}", get(get_voucher).put(update_voucher).delete(delete_voucher))
+        .route(
+            "/{id}",
+            get(get_voucher).put(update_voucher).delete(delete_voucher),
+        )
         .route("/{id}/pdf", get(get_voucher_pdf))
         .route("/{id}/lines", post(add_line))
-        .route("/{id}/lines/{line_id}", put(update_line).delete(delete_line))
+        .route(
+            "/{id}/lines/{line_id}",
+            put(update_line).delete(delete_line),
+        )
         .route("/{id}/transition", post(transition_voucher))
         .route("/{id}/lock", post(lock_voucher))
         .route("/{id}/unlock", post(unlock_voucher))
@@ -150,7 +179,10 @@ fn internal_error() -> (StatusCode, Json<Value>) {
     )
 }
 fn not_found(what: &str) -> (StatusCode, Json<Value>) {
-    (StatusCode::NOT_FOUND, Json(json!({ "error": format!("{what}_not_found") })))
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": format!("{what}_not_found") })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -285,14 +317,20 @@ async fn list_vouchers(
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<VoucherRecord>>, (StatusCode, Json<Value>)> {
     require_any_permission(&auth, permcodes::LIST_VIEW)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let mut sql = format!("SELECT {VOUCHER_COLUMNS} FROM vouchers WHERE tenant_id = $1");
     if params.fiscal_year_id.is_some() {
         sql.push_str(" AND fiscal_year_id = $2");
     }
     if params.status.is_some() {
-        sql.push_str(if params.fiscal_year_id.is_some() { " AND status = $3" } else { " AND status = $2" });
+        sql.push_str(if params.fiscal_year_id.is_some() {
+            " AND status = $3"
+        } else {
+            " AND status = $2"
+        });
     }
     sql.push_str(" ORDER BY voucher_date DESC, voucher_number DESC");
 
@@ -303,7 +341,10 @@ async fn list_vouchers(
     if let Some(status) = &params.status {
         query = query.bind(status);
     }
-    let rows = query.fetch_all(&mut *tx).await.map_err(|_| internal_error())?;
+    let rows = query
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
     Ok(Json(rows))
 }
@@ -322,8 +363,12 @@ async fn get_voucher(
     Path(id): Path<i64>,
 ) -> Result<Json<VoucherDetail>, (StatusCode, Json<Value>)> {
     require_any_permission(&auth, permcodes::LIST_VIEW)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("voucher"));
     };
@@ -351,8 +396,12 @@ async fn get_voucher_pdf(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<axum::response::Response, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("voucher"));
     };
@@ -385,10 +434,16 @@ async fn get_voucher_pdf(
     .await
     .map_err(|_| internal_error())?;
     let label_for = |account_id: i64| -> String {
-        accounts.iter().find(|(id, _)| *id == account_id).map(|(_, label)| label.clone()).unwrap_or_default()
+        accounts
+            .iter()
+            .find(|(id, _)| *id == account_id)
+            .map(|(_, label)| label.clone())
+            .unwrap_or_default()
     };
 
-    let organization_name = crate::pdf::fetch_organization_name(&mut tx, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let organization_name = crate::pdf::fetch_organization_name(&mut tx, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let fiscal_year_label: Option<i32> =
         sqlx::query_scalar("SELECT year FROM fiscal_years WHERE tenant_id = $1 AND id = $2")
             .bind(auth.tenant_id)
@@ -396,18 +451,25 @@ async fn get_voucher_pdf(
             .fetch_optional(&mut *tx)
             .await
             .map_err(|_| internal_error())?;
-    let signature_labels = crate::pdf::fetch_signature_labels(&mut tx, auth.tenant_id, &["voucher_signature_1"])
-        .await
-        .map_err(|_| internal_error())?
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .collect();
+    let signature_labels =
+        crate::pdf::fetch_signature_labels(&mut tx, auth.tenant_id, &["voucher_signature_1"])
+            .await
+            .map_err(|_| internal_error())?
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect();
     tx.rollback().await.ok();
 
     let header = crate::pdf::PrintHeader {
         organization_name,
-        fiscal_year_caption: fiscal_year_label.map(|y| format!("سال مالی {y}")).unwrap_or_default(),
-        report_title: if voucher.kind == "daybook" { "سند روزنامه".to_string() } else { "سند حسابداری".to_string() },
+        fiscal_year_caption: fiscal_year_label
+            .map(|y| format!("سال مالی {y}"))
+            .unwrap_or_default(),
+        report_title: if voucher.kind == "daybook" {
+            "سند روزنامه".to_string()
+        } else {
+            "سند حسابداری".to_string()
+        },
         period_caption: None,
         amount_in_words: None,
         signature_labels,
@@ -435,8 +497,14 @@ async fn get_voucher_pdf(
 
     Ok((
         [
-            (axum::http::header::CONTENT_TYPE, "application/pdf".to_string()),
-            (axum::http::header::CONTENT_DISPOSITION, format!("inline; filename=\"voucher-{id}.pdf\"")),
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/pdf".to_string(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("inline; filename=\"voucher-{id}.pdf\""),
+            ),
         ],
         pdf,
     )
@@ -469,10 +537,14 @@ async fn create_voucher(
         return Err(bad_request("description_required")); // check #5
     }
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let Some((is_active, start_date, end_date)) =
-        fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id).await.map_err(|_| internal_error())?
+        fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id)
+            .await
+            .map_err(|_| internal_error())?
     else {
         return Err(not_found("fiscal_year"));
     };
@@ -549,8 +621,12 @@ async fn update_voucher(
     if req.description.trim().is_empty() {
         return Err(bad_request("description_required"));
     }
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("voucher"));
     };
@@ -574,7 +650,9 @@ async fn update_voucher(
         }
     }
     let Some((is_active, start_date, end_date)) =
-        fiscal_year_gate(&mut tx, auth.tenant_id, voucher.fiscal_year_id).await.map_err(|_| internal_error())?
+        fiscal_year_gate(&mut tx, auth.tenant_id, voucher.fiscal_year_id)
+            .await
+            .map_err(|_| internal_error())?
     else {
         return Err(internal_error());
     };
@@ -603,12 +681,14 @@ async fn update_voucher(
     .await
     .map_err(conflict_or_internal)?;
     // Every line carries a copy of the header date (03-03-a.md §3.3) — keep it in sync.
-    sqlx::query("UPDATE voucher_lines SET line_date = $1, updated_at = now() WHERE voucher_id = $2")
-        .bind(req.voucher_date)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
+    sqlx::query(
+        "UPDATE voucher_lines SET line_date = $1, updated_at = now() WHERE voucher_id = $2",
+    )
+    .bind(req.voucher_date)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
 
     audit::record_mutation(
         &mut tx,
@@ -654,19 +734,22 @@ async fn validate_line_request(
     }
     if (req.debit > 0) == (req.credit > 0) {
         // both zero, or both nonzero — either way invalid (#2)
-        return Err(bad_request(if req.debit == 0 { "amount_required" } else { "both_sides_filled" }));
+        return Err(bad_request(if req.debit == 0 {
+            "amount_required"
+        } else {
+            "both_sides_filled"
+        }));
     }
     if req.description.trim().is_empty() {
         return Err(bad_request("description_required")); // #3
     }
-    let child_count: Option<i32> = sqlx::query_scalar(
-        "SELECT child_count FROM accounts WHERE tenant_id = $1 AND id = $2",
-    )
-    .bind(tenant_id)
-    .bind(req.account_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(|_| internal_error())?;
+    let child_count: Option<i32> =
+        sqlx::query_scalar("SELECT child_count FROM accounts WHERE tenant_id = $1 AND id = $2")
+            .bind(tenant_id)
+            .bind(req.account_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|_| internal_error())?;
     match child_count {
         None => return Err(bad_request("account_not_found")),
         Some(c) if c > 0 => return Err(bad_request("account_not_leaf")), // #1
@@ -681,8 +764,12 @@ async fn add_line(
     Path(id): Path<i64>,
     Json(req): Json<LineRequest>,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("voucher"));
     };
@@ -755,8 +842,12 @@ async fn update_line(
     Path((id, line_id)): Path<(i64, i64)>,
     Json(req): Json<LineRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("voucher"));
     };
@@ -767,7 +858,9 @@ async fn update_line(
         return Err(forbidden("voucher_locked"));
     }
     require_permission(&auth, permcodes::AMEND_LINE)?;
-    let Some(line) = fetch_line(&mut tx, auth.tenant_id, id, line_id).await.map_err(|_| internal_error())?
+    let Some(line) = fetch_line(&mut tx, auth.tenant_id, id, line_id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("line"));
     };
@@ -827,8 +920,12 @@ async fn delete_line(
     auth: AuthUser,
     Path((id, line_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("voucher"));
     };
@@ -839,7 +936,9 @@ async fn delete_line(
         return Err(forbidden("voucher_locked"));
     }
     require_permission(&auth, permcodes::AMEND_LINE)?;
-    let Some(line) = fetch_line(&mut tx, auth.tenant_id, id, line_id).await.map_err(|_| internal_error())?
+    let Some(line) = fetch_line(&mut tx, auth.tenant_id, id, line_id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("line"));
     };
@@ -900,8 +999,12 @@ async fn transition_voucher(
     Path(id): Path<i64>,
     Json(req): Json<TransitionRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("voucher"));
     };
@@ -911,8 +1014,9 @@ async fn transition_voucher(
     if let Some(perm) = permcodes::transition(&voucher.kind, &voucher.status, &req.to) {
         require_permission(&auth, perm)?;
     } // else: not a recognised transition at all — let the match below 400 it, no permission to check
-    let Some((is_active, _, _)) =
-        fiscal_year_gate(&mut tx, auth.tenant_id, voucher.fiscal_year_id).await.map_err(|_| internal_error())?
+    let Some((is_active, _, _)) = fiscal_year_gate(&mut tx, auth.tenant_id, voucher.fiscal_year_id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(internal_error());
     };
@@ -976,19 +1080,25 @@ async fn set_locked(
     id: i64,
     locked: bool,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("voucher"));
     };
     require_permission(auth, permcodes::lock(&voucher.kind))?;
-    sqlx::query("UPDATE vouchers SET is_locked = $1, updated_at = now(), updated_by = $2 WHERE id = $3")
-        .bind(locked)
-        .bind(auth.user_id)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
+    sqlx::query(
+        "UPDATE vouchers SET is_locked = $1, updated_at = now(), updated_by = $2 WHERE id = $3",
+    )
+    .bind(locked)
+    .bind(auth.user_id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
     audit::record_mutation(
         &mut tx,
         auth.tenant_id,
@@ -1032,8 +1142,12 @@ async fn delete_voucher(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(voucher) = fetch_voucher(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("voucher"));
     };
@@ -1119,10 +1233,14 @@ async fn generate_journal_voucher(
         return Err(bad_request("invalid_range"));
     }
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let Some((is_active, fy_start, fy_end)) =
-        fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id).await.map_err(|_| internal_error())?
+        fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id)
+            .await
+            .map_err(|_| internal_error())?
     else {
         return Err(not_found("fiscal_year"));
     };
@@ -1177,7 +1295,10 @@ async fn generate_journal_voucher(
     if range_rows.is_empty() {
         return Err(bad_request("no_vouchers_in_range")); // check #13
     }
-    if range_rows.iter().any(|(_, _, status, _)| status != "posted") {
+    if range_rows
+        .iter()
+        .any(|(_, _, status, _)| status != "posted")
+    {
         return Err(bad_request("vouchers_not_all_posted")); // check #14, the key rule
     }
     let source_ids: Vec<i64> = range_rows
@@ -1225,7 +1346,11 @@ async fn generate_journal_voucher(
         let Some(account_id) = account_id else {
             return Err(internal_error()); // data integrity: postings exist under a Kol with no Kol row
         };
-        kol_lines.push(KolLine { account_id, debit: *debit, credit: *credit });
+        kol_lines.push(KolLine {
+            account_id,
+            debit: *debit,
+            credit: *credit,
+        });
     }
 
     let total_debit: i64 = kol_lines.iter().map(|l| l.debit).sum();

@@ -40,26 +40,42 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn req(router: &axum::Router, method: &str, path: &str, token: &str, body: Value) -> axum::response::Response {
-    let mut builder = Request::builder().method(method).uri(path).header(header::COOKIE, cookie(token));
+async fn req(
+    router: &axum::Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Value,
+) -> axum::response::Response {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::COOKIE, cookie(token));
     let b = if body.is_null() {
         Body::empty()
     } else {
         builder = builder.header(header::CONTENT_TYPE, "application/json");
         Body::from(body.to_string())
     };
-    router.clone().oneshot(builder.body(b).unwrap()).await.unwrap()
+    router
+        .clone()
+        .oneshot(builder.body(b).unwrap())
+        .await
+        .unwrap()
 }
 
 async fn seed_tenant_and_admin(pool: &PgPool) -> (i64, String) {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -81,7 +97,14 @@ async fn seed_tenant_and_admin(pool: &PgPool) -> (i64, String) {
     (tenant_id, token)
 }
 
-async fn seed_account(pool: &PgPool, tenant_id: i64, gl: i32, sub: i32, a1: i32, name: &str) -> i64 {
+async fn seed_account(
+    pool: &PgPool,
+    tenant_id: i64,
+    gl: i32,
+    sub: i32,
+    a1: i32,
+    name: &str,
+) -> i64 {
     sqlx::query_scalar(
         "INSERT INTO accounts (tenant_id, general_ledger_code, subsidiary_code, analytic1_code, name) \
          VALUES ($1, $2, $3, $4, $5) RETURNING id",
@@ -142,7 +165,10 @@ async fn reference_party_balance_worked_example(pool: PgPool) -> sqlx::Result<()
     .await?;
 
     let create = req(
-        &router, "POST", "/api/v1/parties", &token,
+        &router,
+        "POST",
+        "/api/v1/parties",
+        &token,
         json!({
             "cardNumber": 52506, "partyType": "natural_person",
             "firstName": "Test", "lastName": "Party", "fatherName": "F",
@@ -168,16 +194,62 @@ async fn reference_party_balance_worked_example(pool: PgPool) -> sqlx::Result<()
     .fetch_one(&pool)
     .await?;
 
-    post_balanced_voucher(&router, &token, fiscal_year_id, leaf_103_1, cash_id, 50_000_000, 0).await;
-    post_balanced_voucher(&router, &token, fiscal_year_id, leaf_103_1, cash_id, 0, 12_000_000).await;
-    post_balanced_voucher(&router, &token, fiscal_year_id, leaf_301_1, cash_id, 3_000_000, 0).await;
-    post_balanced_voucher(&router, &token, fiscal_year_id, leaf_301_1, cash_id, 0, 20_000_000).await;
-
-    let balance = json_body(
-        req(&router, "GET", &format!("/api/v1/parties/{party_id}/balance?fiscalYearId={fiscal_year_id}"), &token, Value::Null).await,
+    post_balanced_voucher(
+        &router,
+        &token,
+        fiscal_year_id,
+        leaf_103_1,
+        cash_id,
+        50_000_000,
+        0,
     )
     .await;
-    assert_eq!(balance["total"], -21_000_000, "07-06-a.md §6.3 reference value");
+    post_balanced_voucher(
+        &router,
+        &token,
+        fiscal_year_id,
+        leaf_103_1,
+        cash_id,
+        0,
+        12_000_000,
+    )
+    .await;
+    post_balanced_voucher(
+        &router,
+        &token,
+        fiscal_year_id,
+        leaf_301_1,
+        cash_id,
+        3_000_000,
+        0,
+    )
+    .await;
+    post_balanced_voucher(
+        &router,
+        &token,
+        fiscal_year_id,
+        leaf_301_1,
+        cash_id,
+        0,
+        20_000_000,
+    )
+    .await;
+
+    let balance = json_body(
+        req(
+            &router,
+            "GET",
+            &format!("/api/v1/parties/{party_id}/balance?fiscalYearId={fiscal_year_id}"),
+            &token,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(
+        balance["total"], -21_000_000,
+        "07-06-a.md §6.3 reference value"
+    );
     Ok(())
 }
 
@@ -199,15 +271,36 @@ async fn post_balanced_voucher(
     let voucher_id = json_body(create).await["id"].as_i64().unwrap();
 
     let lines_path = format!("/api/v1/vouchers/{voucher_id}/lines");
-    let add1 = req(router, "POST", &lines_path, token, json!({ "accountId": account_id, "debit": debit, "credit": credit, "description": "line" })).await;
+    let add1 = req(
+        router,
+        "POST",
+        &lines_path,
+        token,
+        json!({ "accountId": account_id, "debit": debit, "credit": credit, "description": "line" }),
+    )
+    .await;
     assert_eq!(add1.status(), StatusCode::CREATED);
     let add2 = req(router, "POST", &lines_path, token, json!({ "accountId": contra_account_id, "debit": credit, "credit": debit, "description": "line" })).await;
     assert_eq!(add2.status(), StatusCode::CREATED);
 
     let transition_path = format!("/api/v1/vouchers/{voucher_id}/transition");
-    let confirm = req(router, "POST", &transition_path, token, json!({ "to": "confirmed" })).await;
+    let confirm = req(
+        router,
+        "POST",
+        &transition_path,
+        token,
+        json!({ "to": "confirmed" }),
+    )
+    .await;
     assert_eq!(confirm.status(), StatusCode::NO_CONTENT);
-    let post = req(router, "POST", &transition_path, token, json!({ "to": "posted" })).await;
+    let post = req(
+        router,
+        "POST",
+        &transition_path,
+        token,
+        json!({ "to": "posted" }),
+    )
+    .await;
     assert_eq!(post.status(), StatusCode::NO_CONTENT);
 }
 
@@ -233,15 +326,22 @@ async fn reference_average_cost_worked_example(pool: PgPool) -> sqlx::Result<()>
     let accounts: Vec<i64> = {
         let mut v = Vec::new();
         for (gl, sub, name) in [
-            (900, 1, "Purchases"), (900, 2, "Purchase returns"), (901, 1, "Sales"),
-            (901, 2, "Sales returns"), (902, 1, "Discounts"), (902, 2, "VAT"),
+            (900, 1, "Purchases"),
+            (900, 2, "Purchase returns"),
+            (901, 1, "Sales"),
+            (901, 2, "Sales returns"),
+            (902, 1, "Discounts"),
+            (902, 2, "VAT"),
         ] {
             v.push(seed_account(&pool, tenant_id, gl, sub, 0, name).await);
         }
         v
     };
     let resp = req(
-        &router, "POST", "/api/v1/warehouses", &token,
+        &router,
+        "POST",
+        "/api/v1/warehouses",
+        &token,
         json!({
             "name": "Main", "vatRatePct": "9",
             "purchaseAccountId": accounts[0], "purchaseReturnAccountId": accounts[1],
@@ -252,7 +352,19 @@ async fn reference_average_cost_worked_example(pool: PgPool) -> sqlx::Result<()>
     .await;
     let warehouse_id = json_body(resp).await["id"].as_i64().unwrap();
     let counterparty_id = seed_account(&pool, tenant_id, 103, 1, 0, "Trade AR").await;
-    let uom_id = json_body(req(&router, "POST", "/api/v1/units-of-measure", &token, json!({ "name": "kg" })).await).await["id"].as_i64().unwrap();
+    let uom_id = json_body(
+        req(
+            &router,
+            "POST",
+            "/api/v1/units-of-measure",
+            &token,
+            json!({ "name": "kg" }),
+        )
+        .await,
+    )
+    .await["id"]
+        .as_i64()
+        .unwrap();
     let item_id = json_body(
         req(&router, "POST", "/api/v1/items", &token, json!({ "code": 1, "name": "Pistachio", "unitOfMeasureId": uom_id, "salePrice": 999999 })).await,
     )
@@ -260,7 +372,11 @@ async fn reference_average_cost_worked_example(pool: PgPool) -> sqlx::Result<()>
         .as_i64()
         .unwrap();
 
-    for (date, quantity, unit_price) in [("2027-04-01", "100", 50000), ("2027-04-05", "60", 65000), ("2027-04-10", "40", 72500)] {
+    for (date, quantity, unit_price) in [
+        ("2027-04-01", "100", 50000),
+        ("2027-04-05", "60", 65000),
+        ("2027-04-10", "40", 72500),
+    ] {
         let doc = req(
             &router, "POST", "/api/v1/inventory-documents", &token,
             json!({ "fiscalYearId": fiscal_year_id, "documentType": "receipt", "documentDate": date, "warehouseId": warehouse_id, "counterpartyAccountId": counterparty_id }),
@@ -269,7 +385,10 @@ async fn reference_average_cost_worked_example(pool: PgPool) -> sqlx::Result<()>
         assert_eq!(doc.status(), StatusCode::CREATED);
         let doc_id = json_body(doc).await["id"].as_i64().unwrap();
         let line = req(
-            &router, "POST", &format!("/api/v1/inventory-documents/{doc_id}/lines"), &token,
+            &router,
+            "POST",
+            &format!("/api/v1/inventory-documents/{doc_id}/lines"),
+            &token,
             json!({ "itemId": item_id, "quantity": quantity, "unitPrice": unit_price }),
         )
         .await;
@@ -283,7 +402,11 @@ async fn reference_average_cost_worked_example(pool: PgPool) -> sqlx::Result<()>
     )
     .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(json_body(resp).await["averageCost"], 59000, "05-06-a.md §6.2.1 reference value");
+    assert_eq!(
+        json_body(resp).await["averageCost"],
+        59000,
+        "05-06-a.md §6.2.1 reference value"
+    );
     Ok(())
 }
 
@@ -312,8 +435,15 @@ fn reference_pistachio_example_a_ordinary_lot() {
         unit_price: 1_250_000,
     };
     let result = pistachio::compute_deduction(&input);
-    assert_eq!(result.net_weight_kg, bd("1877.000"), "05-08-a.md §8.2.3 Example A net weight");
-    assert_eq!(result.line_amount, 2_346_250_000, "05-08-a.md §8.2.3 Example A line amount");
+    assert_eq!(
+        result.net_weight_kg,
+        bd("1877.000"),
+        "05-08-a.md §8.2.3 Example A net weight"
+    );
+    assert_eq!(
+        result.line_amount, 2_346_250_000,
+        "05-08-a.md §8.2.3 Example A line amount"
+    );
 }
 
 /// Reference (Example B — the deduction floor): 40 bales @ 1.0 kg tare, 500.0 kg gross, 60%
@@ -332,7 +462,18 @@ fn reference_pistachio_example_b_deduction_floor() {
         unit_price: 1_250_000,
     };
     let result = pistachio::compute_deduction(&input);
-    assert_eq!(result.total_deduction_kg, bd("565.000"), "05-08-a.md §8.2.3 Example B: shown as-is, exceeding gross");
-    assert_eq!(result.net_weight_kg, bd("0.000"), "05-08-a.md §8.2.3 Example B: net weight floors at 0");
-    assert_eq!(result.line_amount, 0, "05-08-a.md §8.2.3 Example B: zero-quantity line, zero amount");
+    assert_eq!(
+        result.total_deduction_kg,
+        bd("565.000"),
+        "05-08-a.md §8.2.3 Example B: shown as-is, exceeding gross"
+    );
+    assert_eq!(
+        result.net_weight_kg,
+        bd("0.000"),
+        "05-08-a.md §8.2.3 Example B: net weight floors at 0"
+    );
+    assert_eq!(
+        result.line_amount, 0,
+        "05-08-a.md §8.2.3 Example B: zero-quantity line, zero amount"
+    );
 }

@@ -136,7 +136,16 @@ pub async fn compute_stock_card(
 ) -> Result<StockCard, sqlx::Error> {
     let opening_balance = match from_date.pred_opt() {
         Some(day_before) => {
-            compute_on_hand(tx, tenant_id, item_id, fiscal_year_id, warehouse_id, day_before, None).await?
+            compute_on_hand(
+                tx,
+                tenant_id,
+                item_id,
+                fiscal_year_id,
+                warehouse_id,
+                day_before,
+                None,
+            )
+            .await?
         }
         None => BigDecimal::from(0), // from_date is the earliest representable date -- nothing precedes it
     };
@@ -180,7 +189,10 @@ pub async fn compute_stock_card(
         });
     }
 
-    Ok(StockCard { opening_balance, movements })
+    Ok(StockCard {
+        opening_balance,
+        movements,
+    })
 }
 
 #[derive(Serialize)]
@@ -229,7 +241,10 @@ pub async fn compute_average_cost(
         0
     };
 
-    Ok(AverageCost { average_cost, purchase_quantity: quantity_sum })
+    Ok(AverageCost {
+        average_cost,
+        purchase_quantity: quantity_sum,
+    })
 }
 
 #[cfg(test)]

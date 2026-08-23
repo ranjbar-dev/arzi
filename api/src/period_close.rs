@@ -49,11 +49,7 @@
 //! "current year" between the two inserts, can't even arise here since the
 //! year is always passed explicitly).
 
-use crate::{
-    audit, db,
-    auth::authz::RequireSuperuser,
-    AppState,
-};
+use crate::{audit, auth::authz::RequireSuperuser, db, AppState};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -66,10 +62,16 @@ use sqlx::{Postgres, Transaction};
 use std::collections::HashSet;
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn not_found(what: &str) -> (StatusCode, Json<Value>) {
-    (StatusCode::NOT_FOUND, Json(json!({ "error": format!("{what}_not_found") })))
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": format!("{what}_not_found") })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -80,7 +82,10 @@ fn forbidden(error: &str) -> (StatusCode, Json<Value>) {
 fn conflict_or_internal(err: sqlx::Error) -> (StatusCode, Json<Value>) {
     if let sqlx::Error::Database(db_err) = &err {
         if db_err.constraint() == Some("vouchers_number_key") {
-            return (StatusCode::CONFLICT, Json(json!({ "error": "duplicate_voucher_number" })));
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({ "error": "duplicate_voucher_number" })),
+            );
         }
     }
     internal_error()
@@ -108,16 +113,22 @@ async fn fetch_fiscal_year_by_id(
     .bind(id)
     .fetch_optional(&mut **tx)
     .await
-    .map(|row: Option<(i64, i32, NaiveDate, NaiveDate, bool, Option<i64>)>| {
-        row.map(|(id, year, start_date, end_date, is_active, books_closed_voucher_id)| FiscalYearRow {
-            id,
-            year,
-            start_date,
-            end_date,
-            is_active,
-            books_closed_voucher_id,
-        })
-    })
+    .map(
+        |row: Option<(i64, i32, NaiveDate, NaiveDate, bool, Option<i64>)>| {
+            row.map(
+                |(id, year, start_date, end_date, is_active, books_closed_voucher_id)| {
+                    FiscalYearRow {
+                        id,
+                        year,
+                        start_date,
+                        end_date,
+                        is_active,
+                        books_closed_voucher_id,
+                    }
+                },
+            )
+        },
+    )
 }
 
 async fn fetch_fiscal_year_by_year(
@@ -133,16 +144,22 @@ async fn fetch_fiscal_year_by_year(
     .bind(year)
     .fetch_optional(&mut **tx)
     .await
-    .map(|row: Option<(i64, i32, NaiveDate, NaiveDate, bool, Option<i64>)>| {
-        row.map(|(id, year, start_date, end_date, is_active, books_closed_voucher_id)| FiscalYearRow {
-            id,
-            year,
-            start_date,
-            end_date,
-            is_active,
-            books_closed_voucher_id,
-        })
-    })
+    .map(
+        |row: Option<(i64, i32, NaiveDate, NaiveDate, bool, Option<i64>)>| {
+            row.map(
+                |(id, year, start_date, end_date, is_active, books_closed_voucher_id)| {
+                    FiscalYearRow {
+                        id,
+                        year,
+                        start_date,
+                        end_date,
+                        is_active,
+                        books_closed_voucher_id,
+                    }
+                },
+            )
+        },
+    )
 }
 
 /// (general_ledger_code, subsidiary_code, analytic1_code, analytic2_code, child_count)
@@ -191,7 +208,9 @@ pub async fn close_books(
         return Err(bad_request("no_source_accounts_selected")); // validation #5
     }
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let Some(fy) = fetch_fiscal_year_by_id(&mut tx, auth.tenant_id, fiscal_year_id)
         .await
@@ -222,7 +241,9 @@ pub async fn close_books(
     let mut source_kol_codes: HashSet<i32> = HashSet::new();
     for &id in &req.source_kol_account_ids {
         let Some((kol_code, subsidiary, ta1, ta2, _)) =
-            fetch_account_tuple(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+            fetch_account_tuple(&mut tx, auth.tenant_id, id)
+                .await
+                .map_err(|_| internal_error())?
         else {
             return Err(bad_request("source_account_not_found"));
         };
@@ -263,8 +284,16 @@ pub async fn close_books(
     let pairs: Vec<ClosePair> = leaf_balances
         .into_iter()
         .filter_map(|(account_id, net)| match net {
-            n if n > 0 => Some(ClosePair { account_id, net_debit: n, net_credit: 0 }),
-            n if n < 0 => Some(ClosePair { account_id, net_debit: 0, net_credit: -n }),
+            n if n > 0 => Some(ClosePair {
+                account_id,
+                net_debit: n,
+                net_credit: 0,
+            }),
+            n if n < 0 => Some(ClosePair {
+                account_id,
+                net_debit: 0,
+                net_credit: -n,
+            }),
             _ => None, // clamps to zero — nothing to close for this leaf
         })
         .collect();
@@ -427,7 +456,9 @@ pub async fn carry_forward(
         return Err(bad_request("opening_description_required")); // #12
     }
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let Some(outgoing) = fetch_fiscal_year_by_id(&mut tx, auth.tenant_id, fiscal_year_id)
         .await
@@ -528,8 +559,16 @@ pub async fn carry_forward(
     let pairs: Vec<CarryPair> = leaf_balances
         .into_iter()
         .filter_map(|(account_id, net)| match net {
-            n if n > 0 => Some(CarryPair { account_id, net_debit: n, net_credit: 0 }),
-            n if n < 0 => Some(CarryPair { account_id, net_debit: 0, net_credit: -n }),
+            n if n > 0 => Some(CarryPair {
+                account_id,
+                net_debit: n,
+                net_credit: 0,
+            }),
+            n if n < 0 => Some(CarryPair {
+                account_id,
+                net_debit: 0,
+                net_credit: -n,
+            }),
             _ => None,
         })
         .collect();
@@ -750,6 +789,8 @@ pub async fn carry_forward(
     tx.commit().await.map_err(|_| internal_error())?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({ "closingVoucherId": closing_voucher_id, "openingVoucherId": opening_voucher_id })),
+        Json(
+            json!({ "closingVoucherId": closing_voucher_id, "openingVoucherId": opening_voucher_id }),
+        ),
     ))
 }

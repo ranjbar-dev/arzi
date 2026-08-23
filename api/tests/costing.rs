@@ -45,19 +45,34 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn req(router: &axum::Router, method: &str, path: &str, token: &str, body: Value) -> axum::response::Response {
-    let mut builder = Request::builder().method(method).uri(path).header(header::COOKIE, cookie(token));
+async fn req(
+    router: &axum::Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Value,
+) -> axum::response::Response {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::COOKIE, cookie(token));
     let b = if body.is_null() {
         Body::empty()
     } else {
         builder = builder.header(header::CONTENT_TYPE, "application/json");
         Body::from(body.to_string())
     };
-    router.clone().oneshot(builder.body(b).unwrap()).await.unwrap()
+    router
+        .clone()
+        .oneshot(builder.body(b).unwrap())
+        .await
+        .unwrap()
 }
 
 async fn seed_fiscal_year(pool: &PgPool, tenant_id: i64) -> i64 {
@@ -108,7 +123,10 @@ async fn setup(pool: &PgPool) -> Fixture {
         seed_leaf_account(pool, tenant_id, 902, 2, "VAT").await,
     ];
     let resp = req(
-        &router, "POST", "/api/v1/warehouses", &token,
+        &router,
+        "POST",
+        "/api/v1/warehouses",
+        &token,
         json!({
             "name": "Main", "vatRatePct": "9",
             "purchaseAccountId": accounts[0], "purchaseReturnAccountId": accounts[1],
@@ -120,21 +138,46 @@ async fn setup(pool: &PgPool) -> Fixture {
     let warehouse_id = json_body(resp).await["id"].as_i64().unwrap();
     let counterparty_id = seed_leaf_account(pool, tenant_id, 103, 1, "Trade AR").await;
 
-    let resp = req(&router, "POST", "/api/v1/units-of-measure", &token, json!({ "name": "kg" })).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/units-of-measure",
+        &token,
+        json!({ "name": "kg" }),
+    )
+    .await;
     let uom_id = json_body(resp).await["id"].as_i64().unwrap();
     let resp = req(
-        &router, "POST", "/api/v1/items", &token,
+        &router,
+        "POST",
+        "/api/v1/items",
+        &token,
         json!({ "code": 1, "name": "Pistachio", "unitOfMeasureId": uom_id, "salePrice": 999999 }),
     )
     .await;
     let item_id = json_body(resp).await["id"].as_i64().unwrap();
 
-    Fixture { token, fiscal_year_id, warehouse_id, counterparty_id, item_id }
+    Fixture {
+        token,
+        fiscal_year_id,
+        warehouse_id,
+        counterparty_id,
+        item_id,
+    }
 }
 
-async fn post_receipt(router: &axum::Router, f: &Fixture, date: &str, quantity: &str, unit_price: i64) -> i64 {
+async fn post_receipt(
+    router: &axum::Router,
+    f: &Fixture,
+    date: &str,
+    quantity: &str,
+    unit_price: i64,
+) -> i64 {
     let resp = req(
-        router, "POST", "/api/v1/inventory-documents", &f.token,
+        router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
         json!({
             "fiscalYearId": f.fiscal_year_id, "documentType": "receipt", "documentDate": date,
             "warehouseId": f.warehouse_id, "counterpartyAccountId": f.counterparty_id,
@@ -144,7 +187,10 @@ async fn post_receipt(router: &axum::Router, f: &Fixture, date: &str, quantity: 
     assert_eq!(resp.status(), StatusCode::CREATED);
     let doc_id = json_body(resp).await["id"].as_i64().unwrap();
     let resp = req(
-        router, "POST", &format!("/api/v1/inventory-documents/{doc_id}/lines"), &f.token,
+        router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{doc_id}/lines"),
+        &f.token,
         json!({ "itemId": f.item_id, "quantity": quantity, "unitPrice": unit_price }),
     )
     .await;
@@ -152,7 +198,12 @@ async fn post_receipt(router: &axum::Router, f: &Fixture, date: &str, quantity: 
     doc_id
 }
 
-async fn average_cost(router: &axum::Router, f: &Fixture, as_of: &str, exclude: Option<i64>) -> Value {
+async fn average_cost(
+    router: &axum::Router,
+    f: &Fixture,
+    as_of: &str,
+    exclude: Option<i64>,
+) -> Value {
     let mut url = format!(
         "/api/v1/items/{}/average-cost?fiscalYearId={}&asOfDate={as_of}",
         f.item_id, f.fiscal_year_id
@@ -221,7 +272,10 @@ async fn non_purchase_types_excluded_from_average(pool: PgPool) -> sqlx::Result<
 
     // An issue (sale) at a wildly different price must not move the average.
     let resp = req(
-        &router, "POST", "/api/v1/inventory-documents", &f.token,
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
         json!({
             "fiscalYearId": f.fiscal_year_id, "documentType": "issue", "documentDate": "2027-04-05",
             "warehouseId": f.warehouse_id, "counterpartyAccountId": f.counterparty_id,
@@ -230,7 +284,10 @@ async fn non_purchase_types_excluded_from_average(pool: PgPool) -> sqlx::Result<
     .await;
     let issue_id = json_body(resp).await["id"].as_i64().unwrap();
     req(
-        &router, "POST", &format!("/api/v1/inventory-documents/{issue_id}/lines"), &f.token,
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{issue_id}/lines"),
+        &f.token,
         json!({ "itemId": f.item_id, "quantity": "10", "unitPrice": 999999 }),
     )
     .await;

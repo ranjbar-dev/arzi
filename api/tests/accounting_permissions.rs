@@ -55,11 +55,19 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn req(router: &axum::Router, method: &str, path: &str, token: &str, body: Value) -> axum::response::Response {
+async fn req(
+    router: &axum::Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Value,
+) -> axum::response::Response {
     router
         .clone()
         .oneshot(
@@ -76,16 +84,26 @@ async fn req(router: &axum::Router, method: &str, path: &str, token: &str, body:
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn create_account_and_amend_account_are_independently_grantable(pool: PgPool) -> sqlx::Result<()> {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+async fn create_account_and_amend_account_are_independently_grantable(
+    pool: PgPool,
+) -> sqlx::Result<()> {
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     let (user_id, token) = make_user(&pool, tenant_id, "clerk").await;
     let router = app(AppState { pool: pool.clone() });
 
     // No permissions at all -> every account route 403s.
-    let create = req(&router, "POST", "/api/v1/accounts", &token, json!({ "code": 1, "name": "Assets" })).await;
+    let create = req(
+        &router,
+        "POST",
+        "/api/v1/accounts",
+        &token,
+        json!({ "code": 1, "name": "Assets" }),
+    )
+    .await;
     assert_eq!(create.status(), StatusCode::FORBIDDEN);
     let list = req(&router, "GET", "/api/v1/accounts", &token, Value::Null).await;
     assert_eq!(list.status(), StatusCode::FORBIDDEN);
@@ -93,26 +111,68 @@ async fn create_account_and_amend_account_are_independently_grantable(pool: PgPo
     // Grant ONLY create_account (1102) -> create succeeds, but amend/delete on the
     // resulting node still 403 (the fixed 1102/1103 collision -- legacy conflated these).
     grant(&pool, tenant_id, user_id, "create_account").await;
-    let create = req(&router, "POST", "/api/v1/accounts", &token, json!({ "code": 1, "name": "Assets" })).await;
+    let create = req(
+        &router,
+        "POST",
+        "/api/v1/accounts",
+        &token,
+        json!({ "code": 1, "name": "Assets" }),
+    )
+    .await;
     assert_eq!(create.status(), StatusCode::CREATED);
     let account_id = json_body(create).await["id"].as_i64().unwrap();
 
-    let rename = req(&router, "PUT", &format!("/api/v1/accounts/{account_id}/name"), &token, json!({ "name": "Assets 2" })).await;
+    let rename = req(
+        &router,
+        "PUT",
+        &format!("/api/v1/accounts/{account_id}/name"),
+        &token,
+        json!({ "name": "Assets 2" }),
+    )
+    .await;
     assert_eq!(rename.status(), StatusCode::FORBIDDEN);
-    let delete = req(&router, "DELETE", &format!("/api/v1/accounts/{account_id}"), &token, Value::Null).await;
+    let delete = req(
+        &router,
+        "DELETE",
+        &format!("/api/v1/accounts/{account_id}"),
+        &token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(delete.status(), StatusCode::FORBIDDEN);
 
     // Grant amend_account (1103) too -> rename now succeeds, but a second create still
     // needs 1102 independently (it does, already granted) and delete still needs 1104.
     grant(&pool, tenant_id, user_id, "amend_account").await;
-    let rename = req(&router, "PUT", &format!("/api/v1/accounts/{account_id}/name"), &token, json!({ "name": "Assets 2" })).await;
+    let rename = req(
+        &router,
+        "PUT",
+        &format!("/api/v1/accounts/{account_id}/name"),
+        &token,
+        json!({ "name": "Assets 2" }),
+    )
+    .await;
     assert_eq!(rename.status(), StatusCode::NO_CONTENT);
-    let delete = req(&router, "DELETE", &format!("/api/v1/accounts/{account_id}"), &token, Value::Null).await;
+    let delete = req(
+        &router,
+        "DELETE",
+        &format!("/api/v1/accounts/{account_id}"),
+        &token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(delete.status(), StatusCode::FORBIDDEN);
 
     // Grant delete_account (1104) -> delete now succeeds too. All three fully independent.
     grant(&pool, tenant_id, user_id, "delete_account").await;
-    let delete = req(&router, "DELETE", &format!("/api/v1/accounts/{account_id}"), &token, Value::Null).await;
+    let delete = req(
+        &router,
+        "DELETE",
+        &format!("/api/v1/accounts/{account_id}"),
+        &token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(delete.status(), StatusCode::NO_CONTENT);
 
     // account_list (1101) was never granted -- confirms it's a real, separate gate too.
@@ -127,10 +187,11 @@ async fn create_account_and_amend_account_are_independently_grantable(pool: PgPo
 
 #[sqlx::test(migrations = "./migrations")]
 async fn voucher_routes_are_gated_by_their_catalogue_ids(pool: PgPool) -> sqlx::Result<()> {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     let (user_id, token) = make_user(&pool, tenant_id, "clerk").await;
     let router = app(AppState { pool: pool.clone() });
 
@@ -238,25 +299,73 @@ async fn voucher_routes_are_gated_by_their_catalogue_ids(pool: PgPool) -> sqlx::
     }
 
     // transition draft->confirmed -- needs approve_subsidiary_document (1116), not amend.
-    let confirm = req(&router, "POST", &format!("/api/v1/vouchers/{voucher_id}/transition"), &token, json!({ "to": "confirmed" })).await;
+    let confirm = req(
+        &router,
+        "POST",
+        &format!("/api/v1/vouchers/{voucher_id}/transition"),
+        &token,
+        json!({ "to": "confirmed" }),
+    )
+    .await;
     assert_eq!(confirm.status(), StatusCode::FORBIDDEN);
     grant(&pool, tenant_id, user_id, "approve_subsidiary_document").await;
-    let confirm = req(&router, "POST", &format!("/api/v1/vouchers/{voucher_id}/transition"), &token, json!({ "to": "confirmed" })).await;
+    let confirm = req(
+        &router,
+        "POST",
+        &format!("/api/v1/vouchers/{voucher_id}/transition"),
+        &token,
+        json!({ "to": "confirmed" }),
+    )
+    .await;
     assert_eq!(confirm.status(), StatusCode::NO_CONTENT);
 
     // confirmed->posted -- needs the DIFFERENT id post_subsidiary_document_permanently (1117),
     // proving the four transition directions really are independently gated.
-    let post = req(&router, "POST", &format!("/api/v1/vouchers/{voucher_id}/transition"), &token, json!({ "to": "posted" })).await;
+    let post = req(
+        &router,
+        "POST",
+        &format!("/api/v1/vouchers/{voucher_id}/transition"),
+        &token,
+        json!({ "to": "posted" }),
+    )
+    .await;
     assert_eq!(post.status(), StatusCode::FORBIDDEN);
-    grant(&pool, tenant_id, user_id, "post_subsidiary_document_permanently").await;
-    let post = req(&router, "POST", &format!("/api/v1/vouchers/{voucher_id}/transition"), &token, json!({ "to": "posted" })).await;
+    grant(
+        &pool,
+        tenant_id,
+        user_id,
+        "post_subsidiary_document_permanently",
+    )
+    .await;
+    let post = req(
+        &router,
+        "POST",
+        &format!("/api/v1/vouchers/{voucher_id}/transition"),
+        &token,
+        json!({ "to": "posted" }),
+    )
+    .await;
     assert_eq!(post.status(), StatusCode::NO_CONTENT);
 
     // lock -- needs lock_subsidiary_document (1144).
-    let lock = req(&router, "POST", &format!("/api/v1/vouchers/{voucher_id}/lock"), &token, Value::Null).await;
+    let lock = req(
+        &router,
+        "POST",
+        &format!("/api/v1/vouchers/{voucher_id}/lock"),
+        &token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(lock.status(), StatusCode::FORBIDDEN);
     grant(&pool, tenant_id, user_id, "lock_subsidiary_document").await;
-    let lock = req(&router, "POST", &format!("/api/v1/vouchers/{voucher_id}/lock"), &token, Value::Null).await;
+    let lock = req(
+        &router,
+        "POST",
+        &format!("/api/v1/vouchers/{voucher_id}/lock"),
+        &token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(lock.status(), StatusCode::NO_CONTENT);
 
     // generate-journal -- needs post_journal_document (1133), an entirely separate id family.
@@ -275,7 +384,14 @@ async fn voucher_routes_are_gated_by_their_catalogue_ids(pool: PgPool) -> sqlx::
     grant(&pool, tenant_id, user_id, "post_journal_document").await;
     // (the voucher above is now locked -- unlock via the still-superuser admin session,
     // otherwise it can't be journalised; irrelevant to the permission being tested.)
-    let _ = req(&router, "POST", &format!("/api/v1/vouchers/{voucher_id}/unlock"), &admin_token, Value::Null).await;
+    let _ = req(
+        &router,
+        "POST",
+        &format!("/api/v1/vouchers/{voucher_id}/unlock"),
+        &admin_token,
+        Value::Null,
+    )
+    .await;
     let generate = req(
         &router,
         "POST",

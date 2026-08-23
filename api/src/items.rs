@@ -39,7 +39,10 @@ use serde_json::{json, Value};
 use sqlx::{Postgres, Transaction};
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -50,7 +53,11 @@ fn not_found(error: &str) -> (StatusCode, Json<Value>) {
 fn conflict(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::CONFLICT, Json(json!({ "error": error })))
 }
-fn map_unique_violation(err: sqlx::Error, constraint: &str, error: &str) -> (StatusCode, Json<Value>) {
+fn map_unique_violation(
+    err: sqlx::Error,
+    constraint: &str,
+    error: &str,
+) -> (StatusCode, Json<Value>) {
     if let sqlx::Error::Database(db_err) = &err {
         if db_err.constraint() == Some(constraint) {
             return conflict(error);
@@ -132,7 +139,9 @@ async fn list_warehouses(
     auth: AuthUser,
     Query(q): Query<ListWarehousesQuery>,
 ) -> Result<Json<Vec<WarehouseRecord>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let sql = format!(
         "SELECT {WAREHOUSE_COLUMNS} FROM warehouses WHERE tenant_id = $1 {} ORDER BY name",
         if q.active_only { "AND is_active" } else { "" }
@@ -165,8 +174,12 @@ async fn get_warehouse(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<WarehouseRecord>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(row) = fetch_warehouse(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(row) = fetch_warehouse(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("warehouse_not_found"));
     };
@@ -200,9 +213,21 @@ async fn validate_warehouse_accounts(
     req: &WarehouseRequest,
 ) -> Result<(), (StatusCode, Json<Value>)> {
     require_leaf_account(tx, tenant_id, req.purchase_account_id, "purchase_account").await?;
-    require_leaf_account(tx, tenant_id, req.purchase_return_account_id, "purchase_return_account").await?;
+    require_leaf_account(
+        tx,
+        tenant_id,
+        req.purchase_return_account_id,
+        "purchase_return_account",
+    )
+    .await?;
     require_leaf_account(tx, tenant_id, req.sales_account_id, "sales_account").await?;
-    require_leaf_account(tx, tenant_id, req.sales_return_account_id, "sales_return_account").await?;
+    require_leaf_account(
+        tx,
+        tenant_id,
+        req.sales_return_account_id,
+        "sales_return_account",
+    )
+    .await?;
     require_leaf_account(tx, tenant_id, req.discount_account_id, "discount_account").await?;
     require_leaf_account(tx, tenant_id, req.vat_account_id, "vat_account").await?;
     if let Some(id) = req.finished_goods_account_id {
@@ -225,7 +250,9 @@ async fn create_warehouse(
     if req.name.trim().is_empty() {
         return Err(bad_request("invalid_name"));
     }
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     validate_warehouse_accounts(&mut tx, auth.tenant_id, &req).await?;
 
     let id: i64 = sqlx::query_scalar(
@@ -253,7 +280,13 @@ async fn create_warehouse(
     .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "warehouses", id, "insert", Some(auth.user_id), None,
+        &mut tx,
+        auth.tenant_id,
+        "warehouses",
+        id,
+        "insert",
+        Some(auth.user_id),
+        None,
         Some(json!({ "name": req.name.trim() })),
     )
     .await
@@ -272,8 +305,12 @@ async fn update_warehouse(
     if req.name.trim().is_empty() {
         return Err(bad_request("invalid_name"));
     }
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(existing) = fetch_warehouse(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(existing) = fetch_warehouse(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("warehouse_not_found"));
     };
@@ -304,8 +341,14 @@ async fn update_warehouse(
     .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "warehouses", id, "update", Some(auth.user_id),
-        Some(json!({ "name": existing.name })), Some(json!({ "name": req.name.trim() })),
+        &mut tx,
+        auth.tenant_id,
+        "warehouses",
+        id,
+        "update",
+        Some(auth.user_id),
+        Some(json!({ "name": existing.name })),
+        Some(json!({ "name": req.name.trim() })),
     )
     .await
     .map_err(|_| internal_error())?;
@@ -322,18 +365,23 @@ async fn deactivate_warehouse(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(_) = fetch_warehouse(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(_) = fetch_warehouse(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("warehouse_not_found"));
     };
-    let item_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM item_warehouses WHERE tenant_id = $1 AND warehouse_id = $2")
-            .bind(auth.tenant_id)
-            .bind(id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|_| internal_error())?;
+    let item_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM item_warehouses WHERE tenant_id = $1 AND warehouse_id = $2",
+    )
+    .bind(auth.tenant_id)
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
     if item_count > 0 {
         return Err(bad_request("warehouse_not_empty"));
     }
@@ -346,8 +394,14 @@ async fn deactivate_warehouse(
         .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "warehouses", id, "update", Some(auth.user_id),
-        Some(json!({ "isActive": true })), Some(json!({ "isActive": false })),
+        &mut tx,
+        auth.tenant_id,
+        "warehouses",
+        id,
+        "update",
+        Some(auth.user_id),
+        Some(json!({ "isActive": true })),
+        Some(json!({ "isActive": false })),
     )
     .await
     .map_err(|_| internal_error())?;
@@ -361,21 +415,33 @@ async fn activate_warehouse(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(_) = fetch_warehouse(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(_) = fetch_warehouse(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(not_found("warehouse_not_found"));
     };
-    sqlx::query("UPDATE warehouses SET is_active = true, updated_at = now(), updated_by = $1 WHERE id = $2")
-        .bind(auth.user_id)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
+    sqlx::query(
+        "UPDATE warehouses SET is_active = true, updated_at = now(), updated_by = $1 WHERE id = $2",
+    )
+    .bind(auth.user_id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "warehouses", id, "update", Some(auth.user_id),
-        Some(json!({ "isActive": false })), Some(json!({ "isActive": true })),
+        &mut tx,
+        auth.tenant_id,
+        "warehouses",
+        id,
+        "update",
+        Some(auth.user_id),
+        Some(json!({ "isActive": false })),
+        Some(json!({ "isActive": true })),
     )
     .await
     .map_err(|_| internal_error())?;
@@ -409,7 +475,9 @@ async fn list_units(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<Vec<UnitRecord>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let rows = sqlx::query_as(&format!(
         "SELECT {UNIT_COLUMNS} FROM units_of_measure WHERE tenant_id = $1 ORDER BY name"
     ))
@@ -446,18 +514,22 @@ async fn validate_unit_request(
             if Some(base_id) == self_id {
                 return Err(bad_request("unit_cannot_be_own_base"));
             }
-            let base: Option<(Option<i64>,)> =
-                sqlx::query_as("SELECT base_unit_id FROM units_of_measure WHERE tenant_id = $1 AND id = $2")
-                    .bind(tenant_id)
-                    .bind(base_id)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(|_| internal_error())?;
+            let base: Option<(Option<i64>,)> = sqlx::query_as(
+                "SELECT base_unit_id FROM units_of_measure WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(tenant_id)
+            .bind(base_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|_| internal_error())?;
             match base {
                 None => Err(bad_request("base_unit_not_found")),
                 Some((Some(_),)) => Err(bad_request("base_unit_must_not_itself_be_derived")),
                 Some((None,)) => {
-                    let factor = req.conversion_factor.clone().unwrap_or_else(|| BigDecimal::from(1));
+                    let factor = req
+                        .conversion_factor
+                        .clone()
+                        .unwrap_or_else(|| BigDecimal::from(1));
                     if factor.sign() != bigdecimal::num_bigint::Sign::Plus {
                         return Err(bad_request("invalid_conversion_factor"));
                     }
@@ -476,7 +548,9 @@ async fn create_unit(
     if req.name.trim().is_empty() {
         return Err(bad_request("invalid_name"));
     }
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let factor = validate_unit_request(&mut tx, auth.tenant_id, None, &req).await?;
 
     let id: i64 = sqlx::query_scalar(
@@ -492,7 +566,13 @@ async fn create_unit(
     .map_err(|e| map_unique_violation(e, "units_of_measure_name_key", "duplicate_name"))?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "units_of_measure", id, "insert", Some(auth.user_id), None,
+        &mut tx,
+        auth.tenant_id,
+        "units_of_measure",
+        id,
+        "insert",
+        Some(auth.user_id),
+        None,
         Some(json!({ "name": req.name.trim() })),
     )
     .await
@@ -511,7 +591,9 @@ async fn update_unit(
     if req.name.trim().is_empty() {
         return Err(bad_request("invalid_name"));
     }
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let existing: Option<(String,)> =
         sqlx::query_as("SELECT name FROM units_of_measure WHERE tenant_id = $1 AND id = $2")
             .bind(auth.tenant_id)
@@ -536,8 +618,14 @@ async fn update_unit(
     .map_err(|e| map_unique_violation(e, "units_of_measure_name_key", "duplicate_name"))?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "units_of_measure", id, "update", Some(auth.user_id),
-        Some(json!({ "name": old_name })), Some(json!({ "name": req.name.trim() })),
+        &mut tx,
+        auth.tenant_id,
+        "units_of_measure",
+        id,
+        "update",
+        Some(auth.user_id),
+        Some(json!({ "name": old_name })),
+        Some(json!({ "name": req.name.trim() })),
     )
     .await
     .map_err(|_| internal_error())?;
@@ -568,7 +656,9 @@ async fn list_pistachio_grades(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<Vec<GradeRecord>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let rows = sqlx::query_as(
         "SELECT id, name, sort_order FROM pistachio_grades WHERE tenant_id = $1 ORDER BY sort_order",
     )
@@ -600,7 +690,9 @@ async fn seed_pistachio_grades(
     admin: RequireSuperuser,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     let auth = admin.0;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     for (sort_order, name) in DEFAULT_GRADES {
         sqlx::query(
             "INSERT INTO pistachio_grades (tenant_id, name, sort_order) VALUES ($1, $2, $3) \
@@ -628,7 +720,10 @@ pub fn items_router() -> Router<AppState> {
         .route("/{id}/activate", post(activate_item))
         .route("/{id}/deactivate", post(deactivate_item))
         .route("/{id}/warehouses", post(assign_warehouse))
-        .route("/{id}/warehouses/{warehouse_id}", axum::routing::delete(unassign_warehouse))
+        .route(
+            "/{id}/warehouses/{warehouse_id}",
+            axum::routing::delete(unassign_warehouse),
+        )
         .route("/{id}/on-hand", get(get_on_hand))
         .route("/{id}/stock-card", get(get_stock_card))
         .route("/{id}/average-cost", get(get_average_cost))
@@ -667,11 +762,13 @@ async fn fetch_item(
     tenant_id: i64,
     id: i64,
 ) -> Result<Option<ItemRecord>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {ITEM_COLUMNS} FROM items WHERE tenant_id = $1 AND id = $2"))
-        .bind(tenant_id)
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await
+    sqlx::query_as(&format!(
+        "SELECT {ITEM_COLUMNS} FROM items WHERE tenant_id = $1 AND id = $2"
+    ))
+    .bind(tenant_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
 }
 
 async fn fetch_item_warehouse_ids(
@@ -705,7 +802,9 @@ async fn list_items(
     auth: AuthUser,
     Query(q): Query<ListItemsQuery>,
 ) -> Result<Json<Vec<ItemRecord>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let rows = if let Some(warehouse_id) = q.warehouse_id {
         sqlx::query_as(&format!(
@@ -750,15 +849,23 @@ async fn get_item(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<ItemDetail>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(item) = fetch_item(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(item) = fetch_item(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("item_not_found"));
     };
     let warehouse_ids = fetch_item_warehouse_ids(&mut tx, auth.tenant_id, id)
         .await
         .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
-    Ok(Json(ItemDetail { item, warehouse_ids }))
+    Ok(Json(ItemDetail {
+        item,
+        warehouse_ids,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -840,17 +947,20 @@ async fn create_item(
     auth: AuthUser,
     Json(req): Json<CreateItemRequest>,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     validate_item_request(&mut tx, auth.tenant_id, &req.fields).await?;
 
     for warehouse_id in &req.warehouse_ids {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM warehouses WHERE tenant_id = $1 AND id = $2)")
-                .bind(auth.tenant_id)
-                .bind(warehouse_id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|_| internal_error())?;
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM warehouses WHERE tenant_id = $1 AND id = $2)",
+        )
+        .bind(auth.tenant_id)
+        .bind(warehouse_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|_| internal_error())?;
         if !exists {
             return Err(bad_request("warehouse_not_found"));
         }
@@ -891,7 +1001,13 @@ async fn create_item(
     }
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "items", id, "insert", Some(auth.user_id), None,
+        &mut tx,
+        auth.tenant_id,
+        "items",
+        id,
+        "insert",
+        Some(auth.user_id),
+        None,
         Some(json!({ "code": req.code, "name": req.fields.name.trim() })),
     )
     .await
@@ -911,8 +1027,13 @@ async fn update_item(
     Path(id): Path<i64>,
     Json(req): Json<ItemWriteRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(existing) = fetch_item(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(existing) = fetch_item(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("item_not_found"));
     };
     validate_item_request(&mut tx, auth.tenant_id, &req).await?;
@@ -938,7 +1059,12 @@ async fn update_item(
     .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "items", id, "update", Some(auth.user_id),
+        &mut tx,
+        auth.tenant_id,
+        "items",
+        id,
+        "update",
+        Some(auth.user_id),
         Some(json!({ "name": existing.name, "salePrice": existing.sale_price })),
         Some(json!({ "name": req.name.trim(), "salePrice": req.sale_price })),
     )
@@ -955,21 +1081,34 @@ async fn set_item_active(
     id: i64,
     active: bool,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(existing) = fetch_item(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
-        return Err(not_found("item_not_found"));
-    };
-    sqlx::query("UPDATE items SET is_active = $1, updated_at = now(), updated_by = $2 WHERE id = $3")
-        .bind(active)
-        .bind(auth.user_id)
-        .bind(id)
-        .execute(&mut *tx)
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
+    let Some(existing) = fetch_item(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
+        return Err(not_found("item_not_found"));
+    };
+    sqlx::query(
+        "UPDATE items SET is_active = $1, updated_at = now(), updated_by = $2 WHERE id = $3",
+    )
+    .bind(active)
+    .bind(auth.user_id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "items", id, "update", Some(auth.user_id),
-        Some(json!({ "isActive": existing.is_active })), Some(json!({ "isActive": active })),
+        &mut tx,
+        auth.tenant_id,
+        "items",
+        id,
+        "update",
+        Some(auth.user_id),
+        Some(json!({ "isActive": existing.is_active })),
+        Some(json!({ "isActive": active })),
     )
     .await
     .map_err(|_| internal_error())?;
@@ -1007,8 +1146,13 @@ async fn delete_item(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(existing) = fetch_item(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(existing) = fetch_item(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("item_not_found"));
     };
 
@@ -1025,8 +1169,14 @@ async fn delete_item(
         .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "items", id, "delete", Some(auth.user_id),
-        Some(json!({ "code": existing.code, "name": existing.name })), None,
+        &mut tx,
+        auth.tenant_id,
+        "items",
+        id,
+        "delete",
+        Some(auth.user_id),
+        Some(json!({ "code": existing.code, "name": existing.name })),
+        None,
     )
     .await
     .map_err(|_| internal_error())?;
@@ -1049,17 +1199,23 @@ async fn assign_warehouse(
     Path(id): Path<i64>,
     Json(req): Json<AssignWarehouseRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(_) = fetch_item(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(_) = fetch_item(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("item_not_found"));
     };
-    let warehouse_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM warehouses WHERE tenant_id = $1 AND id = $2)")
-            .bind(auth.tenant_id)
-            .bind(req.warehouse_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|_| internal_error())?;
+    let warehouse_exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM warehouses WHERE tenant_id = $1 AND id = $2)",
+    )
+    .bind(auth.tenant_id)
+    .bind(req.warehouse_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
     if !warehouse_exists {
         return Err(bad_request("warehouse_not_found"));
     }
@@ -1076,7 +1232,13 @@ async fn assign_warehouse(
     .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "item_warehouses", id, "insert", Some(auth.user_id), None,
+        &mut tx,
+        auth.tenant_id,
+        "item_warehouses",
+        id,
+        "insert",
+        Some(auth.user_id),
+        None,
         Some(json!({ "itemId": id, "warehouseId": req.warehouse_id })),
     )
     .await
@@ -1122,12 +1284,23 @@ async fn get_on_hand(
     Path(id): Path<i64>,
     Query(q): Query<OnHandQuery>,
 ) -> Result<Json<OnHandResponse>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(item) = fetch_item(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(item) = fetch_item(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("item_not_found"));
     };
     let on_hand = crate::stock::compute_on_hand(
-        &mut tx, auth.tenant_id, id, q.fiscal_year_id, q.warehouse_id, q.as_of_date, q.exclude_document_id,
+        &mut tx,
+        auth.tenant_id,
+        id,
+        q.fiscal_year_id,
+        q.warehouse_id,
+        q.as_of_date,
+        q.exclude_document_id,
     )
     .await
     .map_err(|_| internal_error())?;
@@ -1135,7 +1308,11 @@ async fn get_on_hand(
 
     #[allow(clippy::cmp_owned)] // comparing a numeric(14,3) on-hand figure against an i64 threshold
     let is_low_stock = on_hand < BigDecimal::from(item.min_stock);
-    Ok(Json(OnHandResponse { on_hand, min_stock: item.min_stock, is_low_stock }))
+    Ok(Json(OnHandResponse {
+        on_hand,
+        min_stock: item.min_stock,
+        is_low_stock,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -1157,12 +1334,23 @@ async fn get_stock_card(
     if q.from_date > q.to_date {
         return Err(bad_request("invalid_date_range"));
     }
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(_) = fetch_item(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(_) = fetch_item(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("item_not_found"));
     };
     let card = crate::stock::compute_stock_card(
-        &mut tx, auth.tenant_id, id, q.fiscal_year_id, q.warehouse_id, q.from_date, q.to_date,
+        &mut tx,
+        auth.tenant_id,
+        id,
+        q.fiscal_year_id,
+        q.warehouse_id,
+        q.from_date,
+        q.to_date,
     )
     .await
     .map_err(|_| internal_error())?;
@@ -1179,12 +1367,23 @@ async fn get_average_cost(
     Path(id): Path<i64>,
     Query(q): Query<OnHandQuery>,
 ) -> Result<Json<crate::stock::AverageCost>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(_) = fetch_item(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(_) = fetch_item(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("item_not_found"));
     };
     let cost = crate::stock::compute_average_cost(
-        &mut tx, auth.tenant_id, id, q.fiscal_year_id, q.warehouse_id, q.as_of_date, q.exclude_document_id,
+        &mut tx,
+        auth.tenant_id,
+        id,
+        q.fiscal_year_id,
+        q.warehouse_id,
+        q.as_of_date,
+        q.exclude_document_id,
     )
     .await
     .map_err(|_| internal_error())?;
@@ -1197,22 +1396,31 @@ async fn unassign_warehouse(
     auth: AuthUser,
     Path((id, warehouse_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let result =
-        sqlx::query("DELETE FROM item_warehouses WHERE tenant_id = $1 AND item_id = $2 AND warehouse_id = $3")
-            .bind(auth.tenant_id)
-            .bind(id)
-            .bind(warehouse_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let result = sqlx::query(
+        "DELETE FROM item_warehouses WHERE tenant_id = $1 AND item_id = $2 AND warehouse_id = $3",
+    )
+    .bind(auth.tenant_id)
+    .bind(id)
+    .bind(warehouse_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
     if result.rows_affected() == 0 {
         return Err(not_found("assignment_not_found"));
     }
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "item_warehouses", id, "delete", Some(auth.user_id),
-        Some(json!({ "itemId": id, "warehouseId": warehouse_id })), None,
+        &mut tx,
+        auth.tenant_id,
+        "item_warehouses",
+        id,
+        "delete",
+        Some(auth.user_id),
+        Some(json!({ "itemId": id, "warehouseId": warehouse_id })),
+        None,
     )
     .await
     .map_err(|_| internal_error())?;

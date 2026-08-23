@@ -27,7 +27,12 @@
 //! invoice-settlement caller) can never be deleted here — "use the side
 //! program" (§6.5), though no such caller exists yet in this phase.
 
-use crate::{audit, auto_post::{self, GeneratedLine, PostingError}, db, auth::AuthUser, AppState};
+use crate::{
+    audit,
+    auth::AuthUser,
+    auto_post::{self, GeneratedLine, PostingError},
+    db, AppState,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -46,10 +51,16 @@ pub fn router() -> Router<AppState> {
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn not_found(what: &str) -> (StatusCode, Json<Value>) {
-    (StatusCode::NOT_FOUND, Json(json!({ "error": format!("{what}_not_found") })))
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": format!("{what}_not_found") })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -79,11 +90,13 @@ async fn fetch_slip(
     tenant_id: i64,
     id: i64,
 ) -> Result<Option<SlipRecord>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {SLIP_COLUMNS} FROM deposit_slips WHERE tenant_id = $1 AND id = $2"))
-        .bind(tenant_id)
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await
+    sqlx::query_as(&format!(
+        "SELECT {SLIP_COLUMNS} FROM deposit_slips WHERE tenant_id = $1 AND id = $2"
+    ))
+    .bind(tenant_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
 }
 
 fn channel_label(channel: &str) -> &'static str {
@@ -155,12 +168,32 @@ async fn post_two_line_voucher(
     actor_id: i64,
 ) -> Result<i64, (StatusCode, Json<Value>)> {
     let lines = [
-        GeneratedLine { account_id: debit_account_id, debit: amount, credit: 0, description: narration.to_string() },
-        GeneratedLine { account_id: credit_account_id, debit: 0, credit: amount, description: narration.to_string() },
+        GeneratedLine {
+            account_id: debit_account_id,
+            debit: amount,
+            credit: 0,
+            description: narration.to_string(),
+        },
+        GeneratedLine {
+            account_id: credit_account_id,
+            debit: 0,
+            credit: amount,
+            description: narration.to_string(),
+        },
     ];
-    auto_post::post_generated_voucher(tx, tenant_id, fiscal_year_id, voucher_date, narration, source_kind, source_id, &lines, actor_id)
-        .await
-        .map_err(posting_error_response)
+    auto_post::post_generated_voucher(
+        tx,
+        tenant_id,
+        fiscal_year_id,
+        voucher_date,
+        narration,
+        source_kind,
+        source_id,
+        &lines,
+        actor_id,
+    )
+    .await
+    .map_err(posting_error_response)
 }
 
 fn posting_error_response(err: PostingError) -> (StatusCode, Json<Value>) {
@@ -169,7 +202,10 @@ fn posting_error_response(err: PostingError) -> (StatusCode, Json<Value>) {
         PostingError::AccountNotLeaf(_) => bad_request("account_not_leaf"),
         PostingError::FiscalYearNotFound => not_found("fiscal_year"),
         PostingError::FiscalYearClosed => bad_request("fiscal_year_closed"),
-        PostingError::EmptyLines | PostingError::Unbalanced | PostingError::InvalidLineAmount(_) | PostingError::Database(_) => internal_error(),
+        PostingError::EmptyLines
+        | PostingError::Unbalanced
+        | PostingError::InvalidLineAmount(_)
+        | PostingError::Database(_) => internal_error(),
     }
 }
 
@@ -220,23 +256,30 @@ async fn create_slip(
         return Err(bad_request("invalid_channel"));
     }
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id, req.slip_date).await?;
     require_leaf_account(&mut tx, auth.tenant_id, req.payer_account_id).await?;
     require_leaf_account(&mut tx, auth.tenant_id, req.bank_account_id).await?;
     if let Some(document_id) = req.source_document_id {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM inventory_documents WHERE tenant_id = $1 AND id = $2)")
-                .bind(auth.tenant_id)
-                .bind(document_id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|_| internal_error())?;
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM inventory_documents WHERE tenant_id = $1 AND id = $2)",
+        )
+        .bind(auth.tenant_id)
+        .bind(document_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|_| internal_error())?;
         if !exists {
             return Err(bad_request("source_document_not_found"));
         }
     }
-    let source_module: i16 = if req.source_document_id.is_some() { 1 } else { 0 };
+    let source_module: i16 = if req.source_document_id.is_some() {
+        1
+    } else {
+        0
+    };
 
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO deposit_slips \
@@ -263,7 +306,11 @@ async fn create_slip(
     // §6.4: debit the bank/cash account, credit the payer -- one correct
     // narration for both lines (the structural fix for the swap defect).
     let narration = req.description.clone().unwrap_or_else(|| {
-        format!("Deposit via {} -- slip {}", channel_label(&req.channel), req.slip_number.clone().unwrap_or_default())
+        format!(
+            "Deposit via {} -- slip {}",
+            channel_label(&req.channel),
+            req.slip_number.clone().unwrap_or_default()
+        )
     });
     let voucher_id = post_two_line_voucher(
         &mut tx,
@@ -316,8 +363,13 @@ async fn update_slip(
         return Err(bad_request("invalid_channel"));
     }
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(existing) = fetch_slip(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(existing) = fetch_slip(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("deposit_slip"));
     };
     fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id, req.slip_date).await?;
@@ -344,10 +396,16 @@ async fn update_slip(
     .map_err(|_| internal_error())?;
 
     if let Some(old_voucher_id) = existing.voucher_id {
-        replace_voucher(&mut tx, auth.tenant_id, old_voucher_id).await.map_err(|_| internal_error())?;
+        replace_voucher(&mut tx, auth.tenant_id, old_voucher_id)
+            .await
+            .map_err(|_| internal_error())?;
     }
     let narration = req.description.clone().unwrap_or_else(|| {
-        format!("Deposit via {} -- slip {}", channel_label(&req.channel), req.slip_number.clone().unwrap_or_default())
+        format!(
+            "Deposit via {} -- slip {}",
+            channel_label(&req.channel),
+            req.slip_number.clone().unwrap_or_default()
+        )
     });
     let voucher_id = post_two_line_voucher(
         &mut tx,
@@ -400,7 +458,9 @@ async fn list_slips(
     auth: AuthUser,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<SlipRecord>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let rows: Vec<SlipRecord> = if let Some(fy) = params.fiscal_year_id {
         sqlx::query_as(&format!(
             "SELECT {SLIP_COLUMNS} FROM deposit_slips WHERE tenant_id = $1 AND fiscal_year_id = $2 ORDER BY slip_date"
@@ -411,11 +471,13 @@ async fn list_slips(
         .await
         .map_err(|_| internal_error())?
     } else {
-        sqlx::query_as(&format!("SELECT {SLIP_COLUMNS} FROM deposit_slips WHERE tenant_id = $1 ORDER BY slip_date"))
-            .bind(auth.tenant_id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|_| internal_error())?
+        sqlx::query_as(&format!(
+            "SELECT {SLIP_COLUMNS} FROM deposit_slips WHERE tenant_id = $1 ORDER BY slip_date"
+        ))
+        .bind(auth.tenant_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|_| internal_error())?
     };
     tx.rollback().await.ok();
     Ok(Json(rows))
@@ -426,8 +488,13 @@ async fn get_slip(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<SlipRecord>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(slip) = fetch_slip(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(slip) = fetch_slip(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("deposit_slip"));
     };
     tx.rollback().await.ok();
@@ -441,20 +508,27 @@ async fn delete_slip(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(slip) = fetch_slip(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(slip) = fetch_slip(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("deposit_slip"));
     };
     if slip.source_module != 0 {
         return Err(bad_request("linked_document_use_source_module"));
     }
     if let Some(voucher_id) = slip.voucher_id {
-        let status: Option<String> = sqlx::query_scalar("SELECT status::text FROM vouchers WHERE tenant_id = $1 AND id = $2")
-            .bind(auth.tenant_id)
-            .bind(voucher_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|_| internal_error())?;
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status::text FROM vouchers WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(auth.tenant_id)
+        .bind(voucher_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|_| internal_error())?;
         if status.as_deref() != Some("draft") {
             return Err(bad_request("voucher_not_draft"));
         }

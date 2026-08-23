@@ -81,19 +81,34 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn req(router: &axum::Router, method: &str, path: &str, token: &str, body: Value) -> axum::response::Response {
-    let mut builder = Request::builder().method(method).uri(path).header(header::COOKIE, cookie(token));
+async fn req(
+    router: &axum::Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Value,
+) -> axum::response::Response {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::COOKIE, cookie(token));
     let b = if body.is_null() {
         Body::empty()
     } else {
         builder = builder.header(header::CONTENT_TYPE, "application/json");
         Body::from(body.to_string())
     };
-    router.clone().oneshot(builder.body(b).unwrap()).await.unwrap()
+    router
+        .clone()
+        .oneshot(builder.body(b).unwrap())
+        .await
+        .unwrap()
 }
 
 async fn seed_fiscal_year(pool: &PgPool, tenant_id: i64) -> i64 {
@@ -161,7 +176,14 @@ async fn setup(pool: &PgPool) -> Fixture {
 
     let counterparty_id = seed_leaf_account(pool, tenant_id, 103, 1, "Trade AR").await;
 
-    let resp = req(&router, "POST", "/api/v1/units-of-measure", &token, json!({ "name": "kg" })).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/units-of-measure",
+        &token,
+        json!({ "name": "kg" }),
+    )
+    .await;
     let uom_id = json_body(resp).await["id"].as_i64().unwrap();
     let resp = req(
         &router,
@@ -173,7 +195,14 @@ async fn setup(pool: &PgPool) -> Fixture {
     .await;
     let item_id = json_body(resp).await["id"].as_i64().unwrap();
 
-    Fixture { tenant_id, token, fiscal_year_id, warehouse_id, counterparty_id, item_id }
+    Fixture {
+        tenant_id,
+        token,
+        fiscal_year_id,
+        warehouse_id,
+        counterparty_id,
+        item_id,
+    }
 }
 
 fn create_body(f: &Fixture, document_type: &str, counterparty: Option<i64>) -> Value {
@@ -197,13 +226,31 @@ async fn create_without_counterparty_is_rejected(pool: PgPool) -> sqlx::Result<(
 
     // The legacy's zero-sentinel path (`AF_Customer = 0`) is rejected outright — account 0 never
     // resolves to a real leaf account, closing the B7 hole structurally rather than special-casing it.
-    let resp = req(&router, "POST", "/api/v1/inventory-documents", &f.token, create_body(&f, "receipt", Some(0))).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
+        create_body(&f, "receipt", Some(0)),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
     // A non-leaf counterparty is rejected too (still B7's spirit: a real postable account).
     let kol_only = seed_leaf_account(&pool, f.tenant_id, 950, 0, "Non-leaf Kol").await;
-    sqlx::query("UPDATE accounts SET child_count = 1 WHERE id = $1").bind(kol_only).execute(&pool).await.unwrap();
-    let resp = req(&router, "POST", "/api/v1/inventory-documents", &f.token, create_body(&f, "receipt", Some(kol_only))).await;
+    sqlx::query("UPDATE accounts SET child_count = 1 WHERE id = $1")
+        .bind(kol_only)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
+        create_body(&f, "receipt", Some(kol_only)),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     Ok(())
 }
@@ -215,11 +262,25 @@ async fn create_draft_add_lines_and_edit(pool: PgPool) -> sqlx::Result<()> {
     let f = setup(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
-    let resp = req(&router, "POST", "/api/v1/inventory-documents", &f.token, create_body(&f, "receipt", Some(f.counterparty_id))).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
+        create_body(&f, "receipt", Some(f.counterparty_id)),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::CREATED);
     let doc_id = json_body(resp).await["id"].as_i64().unwrap();
 
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{doc_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{doc_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let body = json_body(resp).await;
     assert_eq!(body["status"], "draft");
     assert_eq!(body["totalAmount"], 0);
@@ -236,7 +297,14 @@ async fn create_draft_add_lines_and_edit(pool: PgPool) -> sqlx::Result<()> {
     assert_eq!(resp.status(), StatusCode::CREATED);
     let line_id = json_body(resp).await["id"].as_i64().unwrap();
 
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{doc_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{doc_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let body = json_body(resp).await;
     assert_eq!(body["grossAmount"], 500000);
     assert_eq!(body["totalAmount"], 500000);
@@ -252,7 +320,14 @@ async fn create_draft_add_lines_and_edit(pool: PgPool) -> sqlx::Result<()> {
     )
     .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{doc_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{doc_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let body = json_body(resp).await;
     assert_eq!(body["grossAmount"], 1000000);
     assert_eq!(body["discountAmount"], 10000);
@@ -273,17 +348,45 @@ async fn create_draft_add_lines_and_edit(pool: PgPool) -> sqlx::Result<()> {
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     // Delete the line -> header totals return to zero.
-    let resp = req(&router, "DELETE", &format!("/api/v1/inventory-documents/{doc_id}/lines/{line_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "DELETE",
+        &format!("/api/v1/inventory-documents/{doc_id}/lines/{line_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{doc_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{doc_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let body = json_body(resp).await;
     assert_eq!(body["totalAmount"], 0);
     assert_eq!(body["lines"].as_array().unwrap().len(), 0);
 
     // Delete the (still draft) document itself.
-    let resp = req(&router, "DELETE", &format!("/api/v1/inventory-documents/{doc_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "DELETE",
+        &format!("/api/v1/inventory-documents/{doc_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{doc_id}"), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{doc_id}"),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     Ok(())
 }
@@ -298,18 +401,54 @@ async fn per_type_permissions_are_independent(pool: PgPool) -> sqlx::Result<()> 
 
     // No permission at all -> every type 403s.
     for doc_type in ["receipt", "issue", "purchase_return", "sales_return"] {
-        let resp = req(&router, "POST", "/api/v1/inventory-documents", &clerk_token, create_body(&f, doc_type, Some(f.counterparty_id))).await;
-        assert_eq!(resp.status(), StatusCode::FORBIDDEN, "{doc_type} should 403 with no grants");
+        let resp = req(
+            &router,
+            "POST",
+            "/api/v1/inventory-documents",
+            &clerk_token,
+            create_body(&f, doc_type, Some(f.counterparty_id)),
+        )
+        .await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "{doc_type} should 403 with no grants"
+        );
     }
 
     grant(&pool, f.tenant_id, user_id, "issue_purchase_invoice").await; // 1404, receipt only
-    let resp = req(&router, "POST", "/api/v1/inventory-documents", &clerk_token, create_body(&f, "receipt", Some(f.counterparty_id))).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &clerk_token,
+        create_body(&f, "receipt", Some(f.counterparty_id)),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::CREATED);
-    let resp = req(&router, "POST", "/api/v1/inventory-documents", &clerk_token, create_body(&f, "issue", Some(f.counterparty_id))).await;
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN, "receipt grant must not also allow issue");
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &clerk_token,
+        create_body(&f, "issue", Some(f.counterparty_id)),
+    )
+    .await;
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "receipt grant must not also allow issue"
+    );
 
     // Amend/delete are separately gated too.
-    let resp = req(&router, "POST", "/api/v1/inventory-documents", &f.token, create_body(&f, "receipt", Some(f.counterparty_id))).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
+        create_body(&f, "receipt", Some(f.counterparty_id)),
+    )
+    .await;
     let doc_id = json_body(resp).await["id"].as_i64().unwrap();
     let resp = req(
         &router, "PUT", &format!("/api/v1/inventory-documents/{doc_id}"), &clerk_token,
@@ -317,10 +456,24 @@ async fn per_type_permissions_are_independent(pool: PgPool) -> sqlx::Result<()> 
     )
     .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-    let resp = req(&router, "DELETE", &format!("/api/v1/inventory-documents/{doc_id}"), &clerk_token, Value::Null).await;
+    let resp = req(
+        &router,
+        "DELETE",
+        &format!("/api/v1/inventory-documents/{doc_id}"),
+        &clerk_token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     grant(&pool, f.tenant_id, user_id, "delete_invoice").await; // 1414
-    let resp = req(&router, "DELETE", &format!("/api/v1/inventory-documents/{doc_id}"), &clerk_token, Value::Null).await;
+    let resp = req(
+        &router,
+        "DELETE",
+        &format!("/api/v1/inventory-documents/{doc_id}"),
+        &clerk_token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     Ok(())
 }
@@ -333,7 +486,14 @@ async fn date_outside_fiscal_year_rejected(pool: PgPool) -> sqlx::Result<()> {
     let router = app(AppState { pool: pool.clone() });
     let mut body = create_body(&f, "receipt", Some(f.counterparty_id));
     body["documentDate"] = json!("2020-01-01");
-    let resp = req(&router, "POST", "/api/v1/inventory-documents", &f.token, body).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
+        body,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     Ok(())
 }
@@ -345,18 +505,46 @@ async fn document_number_shared_sequence_and_uniqueness(pool: PgPool) -> sqlx::R
     let f = setup(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
-    let resp = req(&router, "POST", "/api/v1/inventory-documents", &f.token, create_body(&f, "receipt", Some(f.counterparty_id))).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
+        create_body(&f, "receipt", Some(f.counterparty_id)),
+    )
+    .await;
     let n1 = json_body(resp).await;
-    let resp = req(&router, "POST", "/api/v1/inventory-documents", &f.token, create_body(&f, "issue", Some(f.counterparty_id))).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
+        create_body(&f, "issue", Some(f.counterparty_id)),
+    )
+    .await;
     let n2 = json_body(resp).await;
     assert_ne!(n1["id"], n2["id"]);
 
     // Explicit duplicate number is rejected by the unique constraint.
-    let doc1 = req(&router, "GET", &format!("/api/v1/inventory-documents/{}", n1["id"]), &f.token, Value::Null).await;
+    let doc1 = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{}", n1["id"]),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let existing_number = json_body(doc1).await["documentNumber"].as_i64().unwrap();
     let mut body = create_body(&f, "receipt", Some(f.counterparty_id));
     body["documentNumber"] = json!(existing_number);
-    let resp = req(&router, "POST", "/api/v1/inventory-documents", &f.token, body).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &f.token,
+        body,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::CONFLICT);
     Ok(())
 }
@@ -381,9 +569,15 @@ async fn total_identity_enforced_at_database_level(pool: PgPool) -> sqlx::Result
     .bind(f.counterparty_id)
     .execute(&pool)
     .await;
-    assert!(header_result.is_err(), "a wrong header total must be rejected by the database");
+    assert!(
+        header_result.is_err(),
+        "a wrong header total must be rejected by the database"
+    );
     let msg = header_result.unwrap_err().to_string();
-    assert!(msg.contains("inventory_documents_total_identity"), "unexpected error: {msg}");
+    assert!(
+        msg.contains("inventory_documents_total_identity"),
+        "unexpected error: {msg}"
+    );
 
     // A correctly-totalled header to hang the line off, so only the LINE's identity is under test.
     let doc_id: i64 = sqlx::query_scalar(
@@ -411,8 +605,14 @@ async fn total_identity_enforced_at_database_level(pool: PgPool) -> sqlx::Result
     .bind(f.item_id)
     .execute(&pool)
     .await;
-    assert!(line_result.is_err(), "a wrong line total must be rejected by the database");
+    assert!(
+        line_result.is_err(),
+        "a wrong line total must be rejected by the database"
+    );
     let msg = line_result.unwrap_err().to_string();
-    assert!(msg.contains("inventory_document_lines_total_identity"), "unexpected error: {msg}");
+    assert!(
+        msg.contains("inventory_document_lines_total_identity"),
+        "unexpected error: {msg}"
+    );
     Ok(())
 }

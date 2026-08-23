@@ -73,18 +73,27 @@ use sqlx::{Postgres, Transaction};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/trial-balance-4-column", get(trial_balance_4_column))
-        .route("/trial-balance-4-column/pdf", get(trial_balance_4_column_pdf))
+        .route(
+            "/trial-balance-4-column/pdf",
+            get(trial_balance_4_column_pdf),
+        )
         .route("/trial-balance-6-column", get(trial_balance_6_column))
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
 }
 fn not_found(what: &str) -> (StatusCode, Json<Value>) {
-    (StatusCode::NOT_FOUND, Json(json!({ "error": format!("{what}_not_found") })))
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": format!("{what}_not_found") })),
+    )
 }
 
 /// 04-02-a.md §2.1's four levels — Kol only, up through all four segments.
@@ -139,14 +148,22 @@ async fn fetch_level_rows(
     upto_date: NaiveDate,
 ) -> Result<Vec<RawRow>, sqlx::Error> {
     let select_cols = match level {
-        1 => "la.general_ledger_code AS general_ledger_code, 0::int AS subsidiary_code, \
-              0::int AS analytic1_code, 0::int AS analytic2_code",
-        2 => "la.general_ledger_code AS general_ledger_code, la.subsidiary_code AS subsidiary_code, \
-              0::int AS analytic1_code, 0::int AS analytic2_code",
-        3 => "la.general_ledger_code AS general_ledger_code, la.subsidiary_code AS subsidiary_code, \
-              la.analytic1_code AS analytic1_code, 0::int AS analytic2_code",
-        4 => "la.general_ledger_code AS general_ledger_code, la.subsidiary_code AS subsidiary_code, \
-              la.analytic1_code AS analytic1_code, la.analytic2_code AS analytic2_code",
+        1 => {
+            "la.general_ledger_code AS general_ledger_code, 0::int AS subsidiary_code, \
+              0::int AS analytic1_code, 0::int AS analytic2_code"
+        }
+        2 => {
+            "la.general_ledger_code AS general_ledger_code, la.subsidiary_code AS subsidiary_code, \
+              0::int AS analytic1_code, 0::int AS analytic2_code"
+        }
+        3 => {
+            "la.general_ledger_code AS general_ledger_code, la.subsidiary_code AS subsidiary_code, \
+              la.analytic1_code AS analytic1_code, 0::int AS analytic2_code"
+        }
+        4 => {
+            "la.general_ledger_code AS general_ledger_code, la.subsidiary_code AS subsidiary_code, \
+              la.analytic1_code AS analytic1_code, la.analytic2_code AS analytic2_code"
+        }
         _ => unreachable!("level_num only ever returns 1..=4"),
     };
     let group_cols = match level {
@@ -224,7 +241,11 @@ struct BalanceProof {
 fn balance_proof(kol_rows: &[RawRow]) -> BalanceProof {
     let total_debit: i64 = kol_rows.iter().map(|r| r.debit_upto).sum();
     let total_credit: i64 = kol_rows.iter().map(|r| r.credit_upto).sum();
-    BalanceProof { total_debit, total_credit, balanced: total_debit == total_credit }
+    BalanceProof {
+        total_debit,
+        total_credit,
+        balanced: total_debit == total_credit,
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -264,7 +285,8 @@ async fn compute_four_column(
     let mut rows = Vec::new();
     let mut kol_rows: Vec<RawRow> = Vec::new();
     for level in 1..=max_level {
-        let raw = fetch_level_rows(tx, tenant_id, fiscal_year_id, level, start_date, as_of_date).await?;
+        let raw =
+            fetch_level_rows(tx, tenant_id, fiscal_year_id, level, start_date, as_of_date).await?;
         if level == 1 {
             kol_rows = raw.clone();
         }
@@ -282,12 +304,19 @@ async fn trial_balance_4_column(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     authz::require(&auth, "trial_balance_4_column")?;
     let max_level = level_num(&params.level)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
-    let Some((raw_rows, proof)) =
-        compute_four_column(&mut tx, auth.tenant_id, params.fiscal_year_id, max_level, params.as_of_date)
-            .await
-            .map_err(|_| internal_error())?
+    let Some((raw_rows, proof)) = compute_four_column(
+        &mut tx,
+        auth.tenant_id,
+        params.fiscal_year_id,
+        max_level,
+        params.as_of_date,
+    )
+    .await
+    .map_err(|_| internal_error())?
     else {
         return Err(not_found("fiscal_year"));
     };
@@ -343,18 +372,26 @@ async fn trial_balance_4_column_pdf(
 ) -> Result<axum::response::Response, (StatusCode, Json<Value>)> {
     authz::require(&auth, "trial_balance_4_column")?;
     let max_level = level_num(&params.level)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
-    let Some((raw_rows, proof)) =
-        compute_four_column(&mut tx, auth.tenant_id, params.fiscal_year_id, max_level, params.as_of_date)
-            .await
-            .map_err(|_| internal_error())?
+    let Some((raw_rows, proof)) = compute_four_column(
+        &mut tx,
+        auth.tenant_id,
+        params.fiscal_year_id,
+        max_level,
+        params.as_of_date,
+    )
+    .await
+    .map_err(|_| internal_error())?
     else {
         return Err(not_found("fiscal_year"));
     };
 
-    let organization_name =
-        crate::pdf::fetch_organization_name(&mut tx, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let organization_name = crate::pdf::fetch_organization_name(&mut tx, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let fiscal_year_label: Option<i32> =
         sqlx::query_scalar("SELECT year FROM fiscal_years WHERE tenant_id = $1 AND id = $2")
             .bind(auth.tenant_id)
@@ -363,18 +400,21 @@ async fn trial_balance_4_column_pdf(
             .await
             .map_err(|_| internal_error())?;
     // Taraz4Setooni_U.pas:174's own signature source -- 1014, "report_signature" here.
-    let signature_labels = crate::pdf::fetch_signature_labels(&mut tx, auth.tenant_id, &["report_signature"])
-        .await
-        .map_err(|_| internal_error())?
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .collect();
+    let signature_labels =
+        crate::pdf::fetch_signature_labels(&mut tx, auth.tenant_id, &["report_signature"])
+            .await
+            .map_err(|_| internal_error())?
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect();
     tx.rollback().await.ok();
 
     let (grand_balance_debit, grand_balance_credit) = net(proof.total_debit, proof.total_credit);
     let header = crate::pdf::PrintHeader {
         organization_name,
-        fiscal_year_caption: fiscal_year_label.map(|y| format!("سال مالی {y}")).unwrap_or_default(),
+        fiscal_year_caption: fiscal_year_label
+            .map(|y| format!("سال مالی {y}"))
+            .unwrap_or_default(),
         report_title: "تراز آزمایشی ۴ ستونی".to_string(),
         period_caption: Some(format!("تا تاریخ: {}", params.as_of_date)),
         // The grand total's NET balance is zero by construction whenever the
@@ -386,8 +426,14 @@ async fn trial_balance_4_column_pdf(
         amount_in_words: Some(crate::persian_words::amount_in_words(proof.total_debit)),
         signature_labels,
     };
-    let columns =
-        vec!["کد".to_string(), "نام".to_string(), "گردش بدهکار".to_string(), "گردش بستانکار".to_string(), "مانده بدهکار".to_string(), "مانده بستانکار".to_string()];
+    let columns = vec![
+        "کد".to_string(),
+        "نام".to_string(),
+        "گردش بدهکار".to_string(),
+        "گردش بستانکار".to_string(),
+        "مانده بدهکار".to_string(),
+        "مانده بستانکار".to_string(),
+    ];
     let rows: Vec<Vec<String>> = raw_rows
         .iter()
         .map(|(level, r)| {
@@ -396,8 +442,14 @@ async fn trial_balance_4_column_pdf(
             let code = match level {
                 1 => r.general_ledger_code.to_string(),
                 2 => format!("{}-{}", r.general_ledger_code, r.subsidiary_code),
-                3 => format!("{}-{}-{}", r.general_ledger_code, r.subsidiary_code, r.analytic1_code),
-                _ => format!("{}-{}-{}-{}", r.general_ledger_code, r.subsidiary_code, r.analytic1_code, r.analytic2_code),
+                3 => format!(
+                    "{}-{}-{}",
+                    r.general_ledger_code, r.subsidiary_code, r.analytic1_code
+                ),
+                _ => format!(
+                    "{}-{}-{}-{}",
+                    r.general_ledger_code, r.subsidiary_code, r.analytic1_code, r.analytic2_code
+                ),
             };
             vec![
                 code,
@@ -418,12 +470,19 @@ async fn trial_balance_4_column_pdf(
         crate::pdf::format_amount_public(grand_balance_credit),
     ];
 
-    let pdf = crate::pdf::render_tabular_report_pdf(header, columns, rows, Some(totals)).map_err(|_| internal_error())?;
+    let pdf = crate::pdf::render_tabular_report_pdf(header, columns, rows, Some(totals))
+        .map_err(|_| internal_error())?;
 
     Ok((
         [
-            (axum::http::header::CONTENT_TYPE, "application/pdf".to_string()),
-            (axum::http::header::CONTENT_DISPOSITION, "inline; filename=\"trial-balance-4-column.pdf\"".to_string()),
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/pdf".to_string(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                "inline; filename=\"trial-balance-4-column.pdf\"".to_string(),
+            ),
         ],
         pdf,
     )
@@ -460,7 +519,9 @@ async fn trial_balance_6_column(
     if params.from_date > params.to_date {
         return Err(bad_request("date_range_inverted"));
     }
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     if fetch_fiscal_year_start(&mut tx, auth.tenant_id, params.fiscal_year_id)
         .await
@@ -483,9 +544,16 @@ async fn trial_balance_6_column(
     let kol_rows = if level == 1 {
         raw.clone()
     } else {
-        fetch_level_rows(&mut tx, auth.tenant_id, params.fiscal_year_id, 1, params.from_date, params.to_date)
-            .await
-            .map_err(|_| internal_error())?
+        fetch_level_rows(
+            &mut tx,
+            auth.tenant_id,
+            params.fiscal_year_id,
+            1,
+            params.from_date,
+            params.to_date,
+        )
+        .await
+        .map_err(|_| internal_error())?
     };
     tx.rollback().await.ok();
 

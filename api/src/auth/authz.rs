@@ -69,7 +69,10 @@ pub fn require_any(auth: &AuthUser, codes: &[&str]) -> Result<(), (StatusCode, J
     if codes.iter().any(|c| auth.has_permission(c)) {
         Ok(())
     } else {
-        Err((StatusCode::FORBIDDEN, Json(json!({ "error": "insufficient_permission" }))))
+        Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "insufficient_permission" })),
+        ))
     }
 }
 

@@ -161,7 +161,10 @@ async fn login(
 /// (`08-03.md` §3.3's comment on `PassWord`). The explicit `tenant_id`
 /// filter is belt-and-suspenders alongside the RLS-scoped transaction: this
 /// query must be correct even if RLS is ever misconfigured or bypassed.
-async fn attempt_login(pool: &PgPool, req: &LoginRequest) -> Result<(String, DateTime<Utc>), LoginError> {
+async fn attempt_login(
+    pool: &PgPool,
+    req: &LoginRequest,
+) -> Result<(String, DateTime<Utc>), LoginError> {
     let tenant_id: Option<i64> =
         sqlx::query_scalar("SELECT id FROM tenants WHERE slug = $1 AND is_active")
             .bind(&req.tenant_slug)
@@ -200,14 +203,16 @@ async fn attempt_login(pool: &PgPool, req: &LoginRequest) -> Result<(String, Dat
 
     let token = generate_session_token();
     let expires_at = Utc::now() + Duration::hours(SESSION_TTL_HOURS);
-    sqlx::query("INSERT INTO sessions (id, user_id, tenant_id, expires_at) VALUES ($1, $2, $3, $4)")
-        .bind(&token)
-        .bind(user_id)
-        .bind(tenant_id)
-        .bind(expires_at)
-        .execute(pool)
-        .await
-        .map_err(|_| LoginError::Internal)?;
+    sqlx::query(
+        "INSERT INTO sessions (id, user_id, tenant_id, expires_at) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(&token)
+    .bind(user_id)
+    .bind(tenant_id)
+    .bind(expires_at)
+    .execute(pool)
+    .await
+    .map_err(|_| LoginError::Internal)?;
 
     if let Ok(mut tx) = db::begin(pool, tenant_id).await {
         let _ = audit::record_auth_event(
@@ -280,7 +285,10 @@ fn internal_error() -> (StatusCode, Json<Value>) {
 
 // ---- logout ---------------------------------------------------------------
 
-async fn logout(State(state): State<AppState>, jar: CookieJar) -> Result<(CookieJar, StatusCode), StatusCode> {
+async fn logout(
+    State(state): State<AppState>,
+    jar: CookieJar,
+) -> Result<(CookieJar, StatusCode), StatusCode> {
     let Some(cookie) = jar.get(SESSION_COOKIE) else {
         return Err(StatusCode::BAD_REQUEST);
     };
@@ -324,11 +332,12 @@ async fn change_password(
         .await
         .map_err(|_| internal_error())?;
 
-    let current_hash: Option<String> = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
-        .bind(auth.user_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
+    let current_hash: Option<String> =
+        sqlx::query_scalar("SELECT password_hash FROM users WHERE id = $1")
+            .bind(auth.user_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|_| internal_error())?;
     let current_hash = current_hash.ok_or_else(internal_error)?;
 
     // Exact match required, like the legacy (08-03.md §3.5 check #1) — but

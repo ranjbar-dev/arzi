@@ -50,7 +50,10 @@ pub fn router() -> Router<AppState> {
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -103,7 +106,10 @@ fn validate_mandatory_fields(input: &DeductionInput) -> Result<(), (StatusCode, 
     if input.unit_price <= 0 {
         return Err(bad_request("unit_price_required"));
     }
-    if !VALID_TARE_ALLOWANCES.iter().any(|v| v.parse::<BigDecimal>().unwrap() == input.tare_allowance_kg) {
+    if !VALID_TARE_ALLOWANCES
+        .iter()
+        .any(|v| v.parse::<BigDecimal>().unwrap() == input.tare_allowance_kg)
+    {
         return Err(bad_request("invalid_tare_allowance")); // §8.2.1: AdlV's three combo values only
     }
     if input.moisture_pct < BigDecimal::zero() || input.blank_pct < BigDecimal::zero() {
@@ -132,10 +138,16 @@ fn scale3(value: bigdecimal::BigDecimal) -> bigdecimal::BigDecimal {
 /// already covered by this module's own tests below.
 pub fn compute_deduction(input: &DeductionInput) -> DeductionResult {
     let tare_deduction_kg = scale3(BigDecimal::from(input.bale_count) * &input.tare_allowance_kg);
-    let moisture_deduction_kg = scale3(&input.moisture_pct * &input.gross_weight_kg / BigDecimal::from(100));
-    let blank_deduction_kg = scale3(&input.blank_pct * &input.gross_weight_kg / BigDecimal::from(100));
-    let total_deduction_kg =
-        scale3(&tare_deduction_kg + &moisture_deduction_kg + &blank_deduction_kg + &input.other_deductions_kg);
+    let moisture_deduction_kg =
+        scale3(&input.moisture_pct * &input.gross_weight_kg / BigDecimal::from(100));
+    let blank_deduction_kg =
+        scale3(&input.blank_pct * &input.gross_weight_kg / BigDecimal::from(100));
+    let total_deduction_kg = scale3(
+        &tare_deduction_kg
+            + &moisture_deduction_kg
+            + &blank_deduction_kg
+            + &input.other_deductions_kg,
+    );
 
     let net_weight_kg = if input.gross_weight_kg < total_deduction_kg {
         BigDecimal::zero() // §8.2.2: only net_weight floors, the deduction total itself does not
@@ -189,7 +201,9 @@ pub(crate) async fn create_pistachio_line(
     inventory_documents::require_permission(&auth, inventory_documents::permcodes::AMEND)?;
     validate_mandatory_fields(&req.deduction)?;
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let Some(document) = inventory_documents::fetch_document(&mut tx, auth.tenant_id, document_id)
         .await
@@ -217,7 +231,12 @@ pub(crate) async fn create_pistachio_line(
     }
 
     let result = compute_deduction(&req.deduction);
-    let amounts = LineAmounts { gross: result.line_amount, discount: 0, tax: 0, total: result.line_amount };
+    let amounts = LineAmounts {
+        gross: result.line_amount,
+        discount: 0,
+        tax: 0,
+        total: result.line_amount,
+    };
 
     let line_id = inventory_documents::insert_line_and_bump_totals(
         &mut tx,
@@ -259,7 +278,13 @@ pub(crate) async fn create_pistachio_line(
     .map_err(|_| internal_error())?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "inventory_document_lines", line_id, "insert", Some(auth.user_id), None,
+        &mut tx,
+        auth.tenant_id,
+        "inventory_document_lines",
+        line_id,
+        "insert",
+        Some(auth.user_id),
+        None,
         Some(json!({
             "documentId": document_id, "itemId": req.item_id, "pistachio": true,
             "netWeightKg": result.net_weight_kg.to_string(), "lineAmount": result.line_amount,
@@ -269,14 +294,27 @@ pub(crate) async fn create_pistachio_line(
     .map_err(|_| internal_error())?;
 
     tx.commit().await.map_err(|_| internal_error())?;
-    Ok((StatusCode::CREATED, Json(json!({ "id": line_id, "netWeightKg": result.net_weight_kg.to_string(), "lineAmount": result.line_amount }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(
+            json!({ "id": line_id, "netWeightKg": result.net_weight_kg.to_string(), "lineAmount": result.line_amount }),
+        ),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn input(bale_count: i32, tare: &str, gross: &str, moisture: &str, blank: &str, other: &str, price: i64) -> DeductionInput {
+    fn input(
+        bale_count: i32,
+        tare: &str,
+        gross: &str,
+        moisture: &str,
+        blank: &str,
+        other: &str,
+        price: i64,
+    ) -> DeductionInput {
         DeductionInput {
             bale_count,
             tare_allowance_kg: tare.parse().unwrap(),
@@ -292,11 +330,26 @@ mod tests {
     #[test]
     fn example_a_ordinary_lot() {
         let result = compute_deduction(&input(40, "0.2", "2000.0", "3.5", "2.0", "5.0", 1_250_000));
-        assert_eq!(result.tare_deduction_kg, "8.000".parse::<BigDecimal>().unwrap());
-        assert_eq!(result.moisture_deduction_kg, "70.000".parse::<BigDecimal>().unwrap());
-        assert_eq!(result.blank_deduction_kg, "40.000".parse::<BigDecimal>().unwrap());
-        assert_eq!(result.total_deduction_kg, "123.000".parse::<BigDecimal>().unwrap());
-        assert_eq!(result.net_weight_kg, "1877.000".parse::<BigDecimal>().unwrap());
+        assert_eq!(
+            result.tare_deduction_kg,
+            "8.000".parse::<BigDecimal>().unwrap()
+        );
+        assert_eq!(
+            result.moisture_deduction_kg,
+            "70.000".parse::<BigDecimal>().unwrap()
+        );
+        assert_eq!(
+            result.blank_deduction_kg,
+            "40.000".parse::<BigDecimal>().unwrap()
+        );
+        assert_eq!(
+            result.total_deduction_kg,
+            "123.000".parse::<BigDecimal>().unwrap()
+        );
+        assert_eq!(
+            result.net_weight_kg,
+            "1877.000".parse::<BigDecimal>().unwrap()
+        );
         assert_eq!(result.line_amount, 2_346_250_000);
     }
 
@@ -305,7 +358,10 @@ mod tests {
     #[test]
     fn example_b_deduction_floor() {
         let result = compute_deduction(&input(40, "1.0", "500.0", "60", "45", "0", 1_000_000));
-        assert_eq!(result.total_deduction_kg, "565.000".parse::<BigDecimal>().unwrap()); // exceeds gross, shown as-is
+        assert_eq!(
+            result.total_deduction_kg,
+            "565.000".parse::<BigDecimal>().unwrap()
+        ); // exceeds gross, shown as-is
         assert_eq!(result.net_weight_kg, BigDecimal::zero());
         assert_eq!(result.line_amount, 0);
     }

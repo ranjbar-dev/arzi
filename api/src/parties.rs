@@ -30,10 +30,10 @@
 //! accounts.rs's identical judgment call for account-lock.
 
 use crate::{
-    audit, db,
-    auth::AuthUser,
+    audit,
     auth::authz::{self, RequireSuperuser},
-    AppState,
+    auth::AuthUser,
+    db, AppState,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -54,14 +54,23 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/lock", post(lock_party))
         .route("/{id}/unlock", post(unlock_party))
         .route("/account-config", get(list_account_config))
-        .route("/account-config/seed-defaults", post(seed_default_account_config))
+        .route(
+            "/account-config/seed-defaults",
+            post(seed_default_account_config),
+        )
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn not_found() -> (StatusCode, Json<Value>) {
-    (StatusCode::NOT_FOUND, Json(json!({ "error": "party_not_found" })))
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": "party_not_found" })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -71,11 +80,17 @@ fn conflict_or_internal(err: sqlx::Error) -> (StatusCode, Json<Value>) {
         match db_err.constraint() {
             // V4 (07-03.md #V4/#V3): duplicate card number on create.
             Some("parties_card_number_key") => {
-                return (StatusCode::CONFLICT, Json(json!({ "error": "duplicate_card_number" })));
+                return (
+                    StatusCode::CONFLICT,
+                    Json(json!({ "error": "duplicate_card_number" })),
+                );
             }
             // V5/V6: duplicate national ID (create) / national ID belonging to another card (update).
             Some("parties_national_id_key") => {
-                return (StatusCode::CONFLICT, Json(json!({ "error": "duplicate_national_id" })));
+                return (
+                    StatusCode::CONFLICT,
+                    Json(json!({ "error": "duplicate_national_id" })),
+                );
             }
             _ => {}
         }
@@ -112,16 +127,26 @@ const PARTY_COLUMNS: &str = "id, card_number, party_type::text, first_name, last
     father_name, id_card_number, birth_date, birth_place, id_issue_date, id_issue_place, \
     national_id, postal_code, registration_number, address, mobile, tax_status::text, is_locked";
 
-async fn fetch_party(tx: &mut Transaction<'_, Postgres>, id: i64) -> Result<Option<PartyRecord>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {PARTY_COLUMNS} FROM parties WHERE id = $1"))
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await
+async fn fetch_party(
+    tx: &mut Transaction<'_, Postgres>,
+    id: i64,
+) -> Result<Option<PartyRecord>, sqlx::Error> {
+    sqlx::query_as(&format!(
+        "SELECT {PARTY_COLUMNS} FROM parties WHERE id = $1"
+    ))
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
 }
 
 /// The generated-leaf-account name formula (07-02-b.md §2.4's table):
 /// `"first last-father"` for a person, `"first last"` for a legal entity.
-fn generated_account_name(party_type: &str, first: &str, last: &str, father: Option<&str>) -> String {
+fn generated_account_name(
+    party_type: &str,
+    first: &str,
+    last: &str,
+    father: Option<&str>,
+) -> String {
     if party_type == "legal_entity" {
         format!("{first} {last}")
     } else {
@@ -165,9 +190,19 @@ pub(crate) async fn fetch_all_config(
 /// the case 07-02-b.md §2.4 flags the legacy as never actually reaching).
 pub(crate) fn coordinate(config: &ConfigRow, card_number: i32) -> (i32, i32, i32, i32) {
     if config.fixed_tafsil1_code == 0 {
-        (config.control_kol_code, config.control_moein_code, card_number, 0)
+        (
+            config.control_kol_code,
+            config.control_moein_code,
+            card_number,
+            0,
+        )
     } else {
-        (config.control_kol_code, config.control_moein_code, config.fixed_tafsil1_code, card_number)
+        (
+            config.control_kol_code,
+            config.control_moein_code,
+            config.fixed_tafsil1_code,
+            card_number,
+        )
     }
 }
 
@@ -200,7 +235,9 @@ async fn resolve_ticked(
 ) -> Result<std::collections::HashMap<i64, i64>, sqlx::Error> {
     let mut found = std::collections::HashMap::new();
     for config in configs {
-        if let Some(account_id) = find_account_id_by_codes(tx, tenant_id, coordinate(config, card_number)).await? {
+        if let Some(account_id) =
+            find_account_id_by_codes(tx, tenant_id, coordinate(config, card_number)).await?
+        {
             found.insert(config.id, account_id);
         }
     }
@@ -241,10 +278,17 @@ async fn ensure_leaf_account(
     let parent_codes = if config.fixed_tafsil1_code == 0 {
         (config.control_kol_code, config.control_moein_code, 0, 0)
     } else {
-        (config.control_kol_code, config.control_moein_code, config.fixed_tafsil1_code, 0)
+        (
+            config.control_kol_code,
+            config.control_moein_code,
+            config.fixed_tafsil1_code,
+            0,
+        )
     };
     let Some(parent_id) = find_account_id_by_codes(tx, tenant_id, parent_codes).await? else {
-        return Err(EnsureLeafError::ControlAccountNotProvisioned { config_name: config.name.clone() });
+        return Err(EnsureLeafError::ControlAccountNotProvisioned {
+            config_name: config.name.clone(),
+        });
     };
 
     let account_id: i64 = sqlx::query_scalar(
@@ -264,10 +308,12 @@ async fn ensure_leaf_account(
     .fetch_one(&mut **tx)
     .await?;
 
-    sqlx::query("UPDATE accounts SET child_count = child_count + 1, updated_at = now() WHERE id = $1")
-        .bind(parent_id)
-        .execute(&mut **tx)
-        .await?;
+    sqlx::query(
+        "UPDATE accounts SET child_count = child_count + 1, updated_at = now() WHERE id = $1",
+    )
+    .bind(parent_id)
+    .execute(&mut **tx)
+    .await?;
 
     audit::record_mutation(
         tx,
@@ -315,15 +361,24 @@ async fn maybe_delete_leaf_account(
         return Ok(()); // already gone
     };
 
-    let parent_codes = if a2 > 0 { (gl, sub, a1, 0) } else { (gl, sub, 0, 0) };
+    let parent_codes = if a2 > 0 {
+        (gl, sub, a1, 0)
+    } else {
+        (gl, sub, 0, 0)
+    };
     let parent_id = find_account_id_by_codes(tx, tenant_id, parent_codes).await?;
 
-    sqlx::query("DELETE FROM accounts WHERE id = $1").bind(account_id).execute(&mut **tx).await?;
+    sqlx::query("DELETE FROM accounts WHERE id = $1")
+        .bind(account_id)
+        .execute(&mut **tx)
+        .await?;
     if let Some(pid) = parent_id {
-        sqlx::query("UPDATE accounts SET child_count = child_count - 1, updated_at = now() WHERE id = $1")
-            .bind(pid)
-            .execute(&mut **tx)
-            .await?;
+        sqlx::query(
+            "UPDATE accounts SET child_count = child_count - 1, updated_at = now() WHERE id = $1",
+        )
+        .bind(pid)
+        .execute(&mut **tx)
+        .await?;
     }
 
     audit::record_mutation(
@@ -344,7 +399,12 @@ async fn maybe_delete_leaf_account(
 
 /// V1-V3 (07-03.md §3.2/§3.3): first/last name non-empty for both kinds,
 /// father's name additionally required for a natural person.
-fn validate_names(party_type: &str, first: &str, last: &str, father: Option<&str>) -> Result<(), &'static str> {
+fn validate_names(
+    party_type: &str,
+    first: &str,
+    last: &str,
+    father: Option<&str>,
+) -> Result<(), &'static str> {
     if first.trim().is_empty() || last.trim().is_empty() {
         return Err("incomplete_data");
     }
@@ -367,7 +427,13 @@ fn validate_config_ids<'a>(
             configs
                 .iter()
                 .find(|c| c.id == *id)
-                .filter(|c| if party_type == "legal_entity" { c.for_legal_entity } else { c.for_person })
+                .filter(|c| {
+                    if party_type == "legal_entity" {
+                        c.for_legal_entity
+                    } else {
+                        c.for_person
+                    }
+                })
                 .ok_or("invalid_control_account")
         })
         .collect()
@@ -405,13 +471,25 @@ async fn create_party(
     if req.party_type != "natural_person" && req.party_type != "legal_entity" {
         return Err(bad_request("invalid_party_type"));
     }
-    validate_names(&req.party_type, &req.first_name, &req.last_name, req.father_name.as_deref())
-        .map_err(bad_request)?;
-    let tax_status = req.tax_status.clone().unwrap_or_else(|| "not_specified".to_string());
+    validate_names(
+        &req.party_type,
+        &req.first_name,
+        &req.last_name,
+        req.father_name.as_deref(),
+    )
+    .map_err(bad_request)?;
+    let tax_status = req
+        .tax_status
+        .clone()
+        .unwrap_or_else(|| "not_specified".to_string());
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
-    let configs = fetch_all_config(&mut tx, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let configs = fetch_all_config(&mut tx, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let ticked = validate_config_ids(&req.control_account_config_ids, &configs, &req.party_type)
         .map_err(bad_request)?;
 
@@ -487,21 +565,40 @@ async fn update_party(
     Path(id): Path<i64>,
     Json(req): Json<PartyFields>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
-    let Some(existing) = fetch_party(&mut tx, id).await.map_err(|_| internal_error())? else {
+    let Some(existing) = fetch_party(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found());
     };
     // party_type is immutable here — the legacy's person<->company move
     // (07-04-b.md §4.5) is a separate hidden admin tool with no manual test
     // or Build bullet in this step's scope; not ported.
-    validate_names(&existing.party_type, &req.first_name, &req.last_name, req.father_name.as_deref())
-        .map_err(bad_request)?;
-    let tax_status = req.tax_status.clone().unwrap_or_else(|| "not_specified".to_string());
+    validate_names(
+        &existing.party_type,
+        &req.first_name,
+        &req.last_name,
+        req.father_name.as_deref(),
+    )
+    .map_err(bad_request)?;
+    let tax_status = req
+        .tax_status
+        .clone()
+        .unwrap_or_else(|| "not_specified".to_string());
 
-    let configs = fetch_all_config(&mut tx, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let desired = validate_config_ids(&req.control_account_config_ids, &configs, &existing.party_type)
-        .map_err(bad_request)?;
+    let configs = fetch_all_config(&mut tx, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let desired = validate_config_ids(
+        &req.control_account_config_ids,
+        &configs,
+        &existing.party_type,
+    )
+    .map_err(bad_request)?;
     let desired_ids: std::collections::HashSet<i64> = desired.iter().map(|c| c.id).collect();
 
     let currently_ticked = resolve_ticked(&mut tx, auth.tenant_id, &configs, existing.card_number)
@@ -599,7 +696,9 @@ async fn list_parties(
     auth: AuthUser,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<PartyRecord>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let rows: Vec<PartyRecord> = match params.kind.as_deref() {
         Some(kind) if kind == "natural_person" || kind == "legal_entity" => sqlx::query_as(&format!(
             "SELECT {PARTY_COLUMNS} FROM parties WHERE tenant_id = $1 AND party_type = $2::party_type \
@@ -648,12 +747,19 @@ async fn get_party(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<PartyDetail>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(party) = fetch_party(&mut tx, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(party) = fetch_party(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found());
     };
 
-    let configs = fetch_all_config(&mut tx, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let configs = fetch_all_config(&mut tx, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let ticked = resolve_ticked(&mut tx, auth.tenant_id, &configs, party.card_number)
         .await
         .map_err(|_| internal_error())?;
@@ -662,7 +768,13 @@ async fn get_party(
     // 07-07.md §7.4's selection rule: offer the default set for this party's
     // kind, plus every control account where the party already has an
     // account (never silently drop an existing non-default one).
-    let offered_flag = |c: &ConfigRow| if party.party_type == "legal_entity" { c.for_legal_entity } else { c.for_person };
+    let offered_flag = |c: &ConfigRow| {
+        if party.party_type == "legal_entity" {
+            c.for_legal_entity
+        } else {
+            c.for_person
+        }
+    };
     let control_accounts = configs
         .into_iter()
         .filter(|c| (offered_flag(c) && c.offered_by_default) || ticked.contains_key(&c.id))
@@ -678,7 +790,10 @@ async fn get_party(
         })
         .collect();
 
-    Ok(Json(PartyDetail { party, control_accounts }))
+    Ok(Json(PartyDetail {
+        party,
+        control_accounts,
+    }))
 }
 
 // ---- balance (Jari) -------------------------------------------------------
@@ -699,14 +814,24 @@ async fn get_party_balance(
     Path(id): Path<i64>,
     Query(params): Query<BalanceQuery>,
 ) -> Result<Json<crate::party_balance::PartyBalance>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(party) = fetch_party(&mut tx, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(party) = fetch_party(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found());
     };
 
-    let balance = crate::party_balance::compute_balance(&mut tx, auth.tenant_id, party.card_number, params.fiscal_year_id)
-        .await
-        .map_err(|_| internal_error())?;
+    let balance = crate::party_balance::compute_balance(
+        &mut tx,
+        auth.tenant_id,
+        party.card_number,
+        params.fiscal_year_id,
+    )
+    .await
+    .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
 
     Ok(Json(balance))
@@ -731,26 +856,40 @@ async fn get_card_jari(
     Query(params): Query<BalanceQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     authz::require(&auth, "card_summary")?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(party) = fetch_party(&mut tx, id).await.map_err(|_| internal_error())? else {
-        return Err(not_found());
-    };
-    let Some((start_date, end_date)): Option<(chrono::NaiveDate, chrono::NaiveDate)> = sqlx::query_as(
-        "SELECT start_date, end_date FROM fiscal_years WHERE tenant_id = $1 AND id = $2",
-    )
-    .bind(auth.tenant_id)
-    .bind(params.fiscal_year_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|_| internal_error())?
-    else {
-        tx.rollback().await.ok();
-        return Err((StatusCode::NOT_FOUND, Json(json!({ "error": "fiscal_year_not_found" }))));
-    };
-
-    let balance = crate::party_balance::compute_balance(&mut tx, auth.tenant_id, party.card_number, params.fiscal_year_id)
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
+    let Some(party) = fetch_party(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
+        return Err(not_found());
+    };
+    let Some((start_date, end_date)): Option<(chrono::NaiveDate, chrono::NaiveDate)> =
+        sqlx::query_as(
+            "SELECT start_date, end_date FROM fiscal_years WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(auth.tenant_id)
+        .bind(params.fiscal_year_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|_| internal_error())?
+    else {
+        tx.rollback().await.ok();
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "fiscal_year_not_found" })),
+        ));
+    };
+
+    let balance = crate::party_balance::compute_balance(
+        &mut tx,
+        auth.tenant_id,
+        party.card_number,
+        params.fiscal_year_id,
+    )
+    .await
+    .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
 
     let breakdown: Vec<Value> = balance
@@ -793,18 +932,25 @@ async fn set_locked(
     id: i64,
     locked: bool,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, admin.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(party) = fetch_party(&mut tx, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, admin.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(party) = fetch_party(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found());
     };
 
-    sqlx::query("UPDATE parties SET is_locked = $1, updated_at = now(), updated_by = $2 WHERE id = $3")
-        .bind(locked)
-        .bind(admin.user_id)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
+    sqlx::query(
+        "UPDATE parties SET is_locked = $1, updated_at = now(), updated_by = $2 WHERE id = $3",
+    )
+    .bind(locked)
+    .bind(admin.user_id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
 
     audit::record_mutation(
         &mut tx,
@@ -874,8 +1020,12 @@ async fn list_account_config(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<Vec<ConfigView>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let rows = fetch_all_config(&mut tx, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let rows = fetch_all_config(&mut tx, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
     Ok(Json(rows.into_iter().map(ConfigView::from).collect()))
 }
@@ -899,12 +1049,24 @@ const DEFAULT_CONFIG_SEED: &[(i32, i32, &str, bool, bool)] = &[
     // now holds"). One control account can't occupy the same coordinate
     // twice under this table's natural key, so the two are merged here
     // rather than silently reproducing the stale duplicate.
-    (104, 2, "Accounts receivable — tenants / companies", true, true),
+    (
+        104,
+        2,
+        "Accounts receivable — tenants / companies",
+        true,
+        true,
+    ),
     (109, 1, "Guarantee notes receivable — persons", true, false),
     (301, 1, "Trade accounts payable — persons", true, false),
     (301, 3, "Trade notes payable — persons", true, false),
     (103, 2, "Trade accounts receivable — companies", false, true),
-    (109, 2, "Guarantee notes receivable — companies", false, true),
+    (
+        109,
+        2,
+        "Guarantee notes receivable — companies",
+        false,
+        true,
+    ),
     (301, 2, "Trade accounts payable — companies", false, true),
     (301, 4, "Trade notes payable — companies", false, true),
 ];
@@ -914,7 +1076,9 @@ async fn seed_default_account_config(
     admin: RequireSuperuser,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     let auth = admin.0;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     for (kol, moein, name, for_person, for_legal_entity) in DEFAULT_CONFIG_SEED {
         sqlx::query(

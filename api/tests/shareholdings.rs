@@ -14,10 +14,11 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 
 async fn seed(pool: &PgPool) -> (i64, i64, String) {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -45,7 +46,9 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -92,7 +95,9 @@ async fn create_holding(
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn list_shows_correct_percentages_and_distribution_matches_worked_example(pool: PgPool) -> sqlx::Result<()> {
+async fn list_shows_correct_percentages_and_distribution_matches_worked_example(
+    pool: PgPool,
+) -> sqlx::Result<()> {
     let (tenant_id, _uid, token) = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
@@ -118,7 +123,9 @@ async fn list_shows_correct_percentages_and_distribution_matches_worked_example(
     let rows = rows.as_array().unwrap();
     assert_eq!(rows.len(), 3);
     let pct_for = |party_id: i64| {
-        rows.iter().find(|r| r["partyId"] == party_id).unwrap()["ownershipPercentage"].as_f64().unwrap()
+        rows.iter().find(|r| r["partyId"] == party_id).unwrap()["ownershipPercentage"]
+            .as_f64()
+            .unwrap()
     };
     assert!((pct_for(p1) - 50.0).abs() < 1e-9);
     assert!((pct_for(p2) - 30.0).abs() < 1e-9);
@@ -138,7 +145,8 @@ async fn list_shows_correct_percentages_and_distribution_matches_worked_example(
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::COOKIE, cookie(&token))
                 .body(Body::from(
-                    json!({ "fiscalYearId": fiscal_year_id, "profitAmount": 100_000_000i64 }).to_string(),
+                    json!({ "fiscalYearId": fiscal_year_id, "profitAmount": 100_000_000i64 })
+                        .to_string(),
                 ))
                 .unwrap(),
         )
@@ -149,7 +157,12 @@ async fn list_shows_correct_percentages_and_distribution_matches_worked_example(
     let allocations = allocations.as_array().unwrap();
     assert_eq!(allocations.len(), 3);
     let alloc_for = |party_id: i64| {
-        allocations.iter().find(|r| r["partyId"] == party_id).unwrap()["allocation"].as_i64().unwrap()
+        allocations
+            .iter()
+            .find(|r| r["partyId"] == party_id)
+            .unwrap()["allocation"]
+            .as_i64()
+            .unwrap()
     };
     assert_eq!(alloc_for(p1), 50_000_000);
     assert_eq!(alloc_for(p2), 30_000_000);
@@ -159,7 +172,9 @@ async fn list_shows_correct_percentages_and_distribution_matches_worked_example(
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn exited_shareholder_excluded_and_remaining_reproportioned(pool: PgPool) -> sqlx::Result<()> {
+async fn exited_shareholder_excluded_and_remaining_reproportioned(
+    pool: PgPool,
+) -> sqlx::Result<()> {
     let (tenant_id, _uid, token) = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
@@ -186,7 +201,8 @@ async fn exited_shareholder_excluded_and_remaining_reproportioned(pool: PgPool) 
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::COOKIE, cookie(&token))
                 .body(Body::from(
-                    json!({ "fiscalYearId": fiscal_year_id, "profitAmount": 100_000_000i64 }).to_string(),
+                    json!({ "fiscalYearId": fiscal_year_id, "profitAmount": 100_000_000i64 })
+                        .to_string(),
                 ))
                 .unwrap(),
         )
@@ -198,7 +214,12 @@ async fn exited_shareholder_excluded_and_remaining_reproportioned(pool: PgPool) 
     // p1 excluded entirely, p2/p3 reproportioned over 500 total (300:200).
     assert_eq!(allocations.len(), 2);
     let alloc_for = |party_id: i64| {
-        allocations.iter().find(|r| r["partyId"] == party_id).unwrap()["allocation"].as_i64().unwrap()
+        allocations
+            .iter()
+            .find(|r| r["partyId"] == party_id)
+            .unwrap()["allocation"]
+            .as_i64()
+            .unwrap()
     };
     assert_eq!(alloc_for(p2), 60_000_000);
     assert_eq!(alloc_for(p3), 40_000_000);

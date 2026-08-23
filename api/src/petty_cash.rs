@@ -28,7 +28,12 @@
 //! keep correct when the whole line set is replaced atomically rather than
 //! incrementally maintained across N separate requests.
 
-use crate::{audit, auto_post::{self, GeneratedLine, PostingError}, db, auth::AuthUser, AppState};
+use crate::{
+    audit,
+    auth::AuthUser,
+    auto_post::{self, GeneratedLine, PostingError},
+    db, AppState,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -43,14 +48,23 @@ use sqlx::{Postgres, Transaction};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_claims).post(create_claim))
-        .route("/{id}", get(get_claim).put(update_claim).delete(delete_claim))
+        .route(
+            "/{id}",
+            get(get_claim).put(update_claim).delete(delete_claim),
+        )
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn not_found(what: &str) -> (StatusCode, Json<Value>) {
-    (StatusCode::NOT_FOUND, Json(json!({ "error": format!("{what}_not_found") })))
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": format!("{what}_not_found") })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -78,11 +92,13 @@ async fn fetch_claim(
     tenant_id: i64,
     id: i64,
 ) -> Result<Option<ClaimRecord>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {CLAIM_COLUMNS} FROM petty_cash_claims WHERE tenant_id = $1 AND id = $2"))
-        .bind(tenant_id)
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await
+    sqlx::query_as(&format!(
+        "SELECT {CLAIM_COLUMNS} FROM petty_cash_claims WHERE tenant_id = $1 AND id = $2"
+    ))
+    .bind(tenant_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
 }
 
 #[derive(sqlx::FromRow, Serialize, Clone)]
@@ -160,7 +176,9 @@ fn posting_error_response(err: PostingError) -> (StatusCode, Json<Value>) {
         PostingError::FiscalYearNotFound => not_found("fiscal_year"),
         PostingError::FiscalYearClosed => bad_request("fiscal_year_closed"),
         PostingError::EmptyLines => bad_request("at_least_one_line_required"),
-        PostingError::Unbalanced | PostingError::InvalidLineAmount(_) | PostingError::Database(_) => internal_error(),
+        PostingError::Unbalanced
+        | PostingError::InvalidLineAmount(_)
+        | PostingError::Database(_) => internal_error(),
     }
 }
 
@@ -216,7 +234,10 @@ async fn post_claim_voucher(
             account_id: l.expense_account_id,
             debit: l.amount,
             credit: 0,
-            description: l.description.clone().unwrap_or_else(|| narration.to_string()),
+            description: l
+                .description
+                .clone()
+                .unwrap_or_else(|| narration.to_string()),
         })
         .collect();
     generated.push(GeneratedLine {
@@ -225,13 +246,25 @@ async fn post_claim_voucher(
         credit: total,
         description: narration.to_string(),
     });
-    auto_post::post_generated_voucher(tx, tenant_id, fiscal_year_id, claim_date, narration, 41, claim_id, &generated, actor_id)
-        .await
-        .map_err(posting_error_response)
+    auto_post::post_generated_voucher(
+        tx,
+        tenant_id,
+        fiscal_year_id,
+        claim_date,
+        narration,
+        41,
+        claim_id,
+        &generated,
+        actor_id,
+    )
+    .await
+    .map_err(posting_error_response)
 }
 
 fn compose_narration(description: &Option<String>, line_count: usize) -> String {
-    description.clone().unwrap_or_else(|| format!("Petty cash claim -- {line_count} expense line(s)"))
+    description
+        .clone()
+        .unwrap_or_else(|| format!("Petty cash claim -- {line_count} expense line(s)"))
 }
 
 // ---- create ---------------------------------------------------------------
@@ -243,7 +276,9 @@ async fn create_claim(
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
     validate_lines(&req.lines).map_err(bad_request)?;
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id, req.claim_date).await?;
     require_leaf_account(&mut tx, auth.tenant_id, req.custodian_account_id).await?;
     for line in &req.lines {
@@ -335,8 +370,13 @@ async fn update_claim(
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     validate_lines(&req.lines).map_err(bad_request)?;
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(existing) = fetch_claim(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(existing) = fetch_claim(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("petty_cash_claim"));
     };
     fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id, req.claim_date).await?;
@@ -448,7 +488,9 @@ async fn list_claims(
     auth: AuthUser,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<ClaimRecord>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let rows: Vec<ClaimRecord> = if let Some(fy) = params.fiscal_year_id {
         sqlx::query_as(&format!(
             "SELECT {CLAIM_COLUMNS} FROM petty_cash_claims WHERE tenant_id = $1 AND fiscal_year_id = $2 ORDER BY claim_date"
@@ -482,11 +524,18 @@ async fn get_claim(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<ClaimDetail>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(claim) = fetch_claim(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(claim) = fetch_claim(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("petty_cash_claim"));
     };
-    let lines = fetch_lines(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?;
+    let lines = fetch_lines(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
     Ok(Json(ClaimDetail { claim, lines }))
 }
@@ -498,17 +547,24 @@ async fn delete_claim(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(claim) = fetch_claim(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(claim) = fetch_claim(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("petty_cash_claim"));
     };
     if let Some(voucher_id) = claim.voucher_id {
-        let status: Option<String> = sqlx::query_scalar("SELECT status::text FROM vouchers WHERE tenant_id = $1 AND id = $2")
-            .bind(auth.tenant_id)
-            .bind(voucher_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|_| internal_error())?;
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status::text FROM vouchers WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(auth.tenant_id)
+        .bind(voucher_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|_| internal_error())?;
         if status.as_deref() != Some("draft") {
             return Err(bad_request("voucher_not_draft"));
         }

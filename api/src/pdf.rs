@@ -65,14 +65,20 @@ const TABULAR_TEMPLATE: &str = include_str!("../templates/tabular_report.typ");
 fn voucher_engine() -> &'static TypstEngine<TypstTemplateMainFile> {
     static ENGINE: OnceLock<TypstEngine<TypstTemplateMainFile>> = OnceLock::new();
     ENGINE.get_or_init(|| {
-        TypstEngine::builder().main_file(VOUCHER_TEMPLATE).fonts([VAZIRMATN_REGULAR, VAZIRMATN_BOLD]).build()
+        TypstEngine::builder()
+            .main_file(VOUCHER_TEMPLATE)
+            .fonts([VAZIRMATN_REGULAR, VAZIRMATN_BOLD])
+            .build()
     })
 }
 
 fn tabular_engine() -> &'static TypstEngine<TypstTemplateMainFile> {
     static ENGINE: OnceLock<TypstEngine<TypstTemplateMainFile>> = OnceLock::new();
     ENGINE.get_or_init(|| {
-        TypstEngine::builder().main_file(TABULAR_TEMPLATE).fonts([VAZIRMATN_REGULAR, VAZIRMATN_BOLD]).build()
+        TypstEngine::builder()
+            .main_file(TABULAR_TEMPLATE)
+            .fonts([VAZIRMATN_REGULAR, VAZIRMATN_BOLD])
+            .build()
     })
 }
 
@@ -106,7 +112,10 @@ pub struct PrintHeader {
 /// `organization` row has been created yet (1.1/1.6 never seeded one; same
 /// "no tenant-provisioning flow exists" gap already documented elsewhere in
 /// this codebase for `account_code_format`/`party_account_config`).
-pub async fn fetch_organization_name(tx: &mut Transaction<'_, Postgres>, tenant_id: i64) -> Result<String, sqlx::Error> {
+pub async fn fetch_organization_name(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: i64,
+) -> Result<String, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT COALESCE( \
              (SELECT name FROM organization WHERE tenant_id = $1), \
@@ -258,7 +267,12 @@ pub fn render_tabular_report_pdf(
     rows: Vec<Vec<String>>,
     totals: Option<Vec<String>>,
 ) -> Result<Vec<u8>, PdfError> {
-    let input = TabularReportInput { header, columns, rows, totals };
+    let input = TabularReportInput {
+        header,
+        columns,
+        rows,
+        totals,
+    };
     compile_and_export(tabular_engine(), input)
 }
 
@@ -266,7 +280,10 @@ fn compile_and_export<D: Into<Dict>>(
     engine: &TypstEngine<TypstTemplateMainFile>,
     input: D,
 ) -> Result<Vec<u8>, PdfError> {
-    let doc = engine.compile_with_input(input).output.map_err(|e| PdfError::Compile(format!("{e:?}")))?;
+    let doc = engine
+        .compile_with_input(input)
+        .output
+        .map_err(|e| PdfError::Compile(format!("{e:?}")))?;
     typst_pdf::pdf(&doc, &Default::default()).map_err(|e| PdfError::Export(format!("{e:?}")))
 }
 
@@ -305,25 +322,62 @@ mod tests {
     #[test]
     fn voucher_pdf_renders_real_bytes() {
         let lines = vec![
-            VoucherLineData { account_label: "10-1".to_string(), description: "نقد".to_string(), debit: 1_500_000, credit: 0 },
-            VoucherLineData { account_label: "40-1".to_string(), description: "فروش".to_string(), debit: 0, credit: 1_500_000 },
+            VoucherLineData {
+                account_label: "10-1".to_string(),
+                description: "نقد".to_string(),
+                debit: 1_500_000,
+                credit: 0,
+            },
+            VoucherLineData {
+                account_label: "40-1".to_string(),
+                description: "فروش".to_string(),
+                debit: 0,
+                credit: 1_500_000,
+            },
         ];
-        let pdf = render_voucher_pdf(sample_header(), 42, "1406/06/01", "سند نمونه", &lines, 1_500_000, 1_500_000)
-            .expect("voucher pdf must render");
+        let pdf = render_voucher_pdf(
+            sample_header(),
+            42,
+            "1406/06/01",
+            "سند نمونه",
+            &lines,
+            1_500_000,
+            1_500_000,
+        )
+        .expect("voucher pdf must render");
         assert!(pdf.starts_with(b"%PDF-"), "output must be a real PDF");
-        assert!(pdf.len() > 500, "a real rendered page should not be a near-empty stub");
+        assert!(
+            pdf.len() > 500,
+            "a real rendered page should not be a near-empty stub"
+        );
     }
 
     #[test]
     fn tabular_report_pdf_renders_real_bytes() {
         let pdf = render_tabular_report_pdf(
             sample_header(),
-            vec!["نام".to_string(), "بدهکار".to_string(), "بستانکار".to_string()],
             vec![
-                vec!["Assets".to_string(), "1,500,000".to_string(), "".to_string()],
-                vec!["Revenue".to_string(), "".to_string(), "1,500,000".to_string()],
+                "نام".to_string(),
+                "بدهکار".to_string(),
+                "بستانکار".to_string(),
             ],
-            Some(vec!["جمع".to_string(), "1,500,000".to_string(), "1,500,000".to_string()]),
+            vec![
+                vec![
+                    "Assets".to_string(),
+                    "1,500,000".to_string(),
+                    "".to_string(),
+                ],
+                vec![
+                    "Revenue".to_string(),
+                    "".to_string(),
+                    "1,500,000".to_string(),
+                ],
+            ],
+            Some(vec![
+                "جمع".to_string(),
+                "1,500,000".to_string(),
+                "1,500,000".to_string(),
+            ]),
         )
         .expect("tabular report pdf must render");
         assert!(pdf.starts_with(b"%PDF-"));

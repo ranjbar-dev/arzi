@@ -20,10 +20,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) VALUES ($1, 'root', 'x', true) RETURNING id",
     )
@@ -64,7 +65,12 @@ async fn seed(pool: &PgPool) -> Fixture {
     };
     let bank_account_id = leaf(101, 1, "Bank").await;
     let payee_account_ids = [leaf(301, 1, "Payee A").await, leaf(301, 2, "Payee B").await];
-    Fixture { fiscal_year_id, bank_account_id, payee_account_ids, token }
+    Fixture {
+        fiscal_year_id,
+        bank_account_id,
+        payee_account_ids,
+        token,
+    }
 }
 
 fn cookie(token: &str) -> String {
@@ -72,11 +78,18 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn post(router: &axum::Router, token: &str, path: &str, body: Value) -> axum::response::Response {
+async fn post(
+    router: &axum::Router,
+    token: &str,
+    path: &str,
+    body: Value,
+) -> axum::response::Response {
     router
         .clone()
         .oneshot(
@@ -93,7 +106,12 @@ async fn post(router: &axum::Router, token: &str, path: &str, body: Value) -> ax
 async fn get(router: &axum::Router, token: &str, path: &str) -> axum::response::Response {
     router
         .clone()
-        .oneshot(Request::get(path).header(header::COOKIE, cookie(token)).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::get(path)
+                .header(header::COOKIE, cookie(token))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap()
 }
@@ -101,7 +119,12 @@ async fn get(router: &axum::Router, token: &str, path: &str) -> axum::response::
 async fn delete(router: &axum::Router, token: &str, path: &str) -> axum::response::Response {
     router
         .clone()
-        .oneshot(Request::delete(path).header(header::COOKIE, cookie(token)).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::delete(path)
+                .header(header::COOKIE, cookie(token))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap()
 }
@@ -131,7 +154,15 @@ async fn two_payees_post_two_debits_one_credit(pool: PgPool) -> sqlx::Result<()>
     assert_eq!(create.status(), StatusCode::CREATED);
     let batch_id = json_body(create).await["id"].as_i64().unwrap();
 
-    let detail = json_body(get(&router, &fx.token, &format!("/api/v1/cheque-payment-batches/{batch_id}")).await).await;
+    let detail = json_body(
+        get(
+            &router,
+            &fx.token,
+            &format!("/api/v1/cheque-payment-batches/{batch_id}"),
+        )
+        .await,
+    )
+    .await;
     assert_eq!(detail["totalAmount"], 350_000);
     assert_eq!(detail["lineCount"], 2);
 
@@ -176,25 +207,43 @@ async fn delete_removes_batch_lines_and_voucher_cleanly(pool: PgPool) -> sqlx::R
     )
     .await;
     let batch_id = json_body(create).await["id"].as_i64().unwrap();
-    let voucher_id =
-        json_body(get(&router, &fx.token, &format!("/api/v1/cheque-payment-batches/{batch_id}")).await).await["voucherId"]
-            .as_i64()
-            .unwrap();
+    let voucher_id = json_body(
+        get(
+            &router,
+            &fx.token,
+            &format!("/api/v1/cheque-payment-batches/{batch_id}"),
+        )
+        .await,
+    )
+    .await["voucherId"]
+        .as_i64()
+        .unwrap();
 
-    let del = delete(&router, &fx.token, &format!("/api/v1/cheque-payment-batches/{batch_id}")).await;
+    let del = delete(
+        &router,
+        &fx.token,
+        &format!("/api/v1/cheque-payment-batches/{batch_id}"),
+    )
+    .await;
     assert_eq!(del.status(), StatusCode::NO_CONTENT);
 
-    let after = get(&router, &fx.token, &format!("/api/v1/cheque-payment-batches/{batch_id}")).await;
+    let after = get(
+        &router,
+        &fx.token,
+        &format!("/api/v1/cheque-payment-batches/{batch_id}"),
+    )
+    .await;
     assert_eq!(after.status(), StatusCode::NOT_FOUND);
     let voucher_gone: Option<i64> = sqlx::query_scalar("SELECT id FROM vouchers WHERE id = $1")
         .bind(voucher_id)
         .fetch_optional(&pool)
         .await?;
     assert!(voucher_gone.is_none());
-    let lines_gone: i64 = sqlx::query_scalar("SELECT count(*) FROM cheque_payment_batch_lines WHERE batch_id = $1")
-        .bind(batch_id)
-        .fetch_one(&pool)
-        .await?;
+    let lines_gone: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM cheque_payment_batch_lines WHERE batch_id = $1")
+            .bind(batch_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(lines_gone, 0);
 
     Ok(())
@@ -230,7 +279,10 @@ async fn requires_description_and_at_least_one_line(pool: PgPool) -> sqlx::Resul
     )
     .await;
     assert_eq!(empty_lines.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(json_body(empty_lines).await["error"], "at_least_one_line_required");
+    assert_eq!(
+        json_body(empty_lines).await["error"],
+        "at_least_one_line_required"
+    );
 
     Ok(())
 }

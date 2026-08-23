@@ -23,10 +23,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -91,11 +92,13 @@ async fn seed(pool: &PgPool) -> Fixture {
     .await
     .unwrap();
 
-    let uom_id: i64 = sqlx::query_scalar("INSERT INTO units_of_measure (tenant_id, name) VALUES ($1, 'kg') RETURNING id")
-        .bind(tenant_id)
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let uom_id: i64 = sqlx::query_scalar(
+        "INSERT INTO units_of_measure (tenant_id, name) VALUES ($1, 'kg') RETURNING id",
+    )
+    .bind(tenant_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
     let item_id: i64 = sqlx::query_scalar(
         "INSERT INTO items (tenant_id, code, name, unit_of_measure_id, sale_price, min_stock) \
          VALUES ($1, 5001, 'Pistachio', $2, 100000, 50) RETURNING id",
@@ -105,15 +108,24 @@ async fn seed(pool: &PgPool) -> Fixture {
     .fetch_one(pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO item_warehouses (tenant_id, item_id, warehouse_id) VALUES ($1, $2, $3)")
-        .bind(tenant_id)
-        .bind(item_id)
-        .bind(warehouse_id)
-        .execute(pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO item_warehouses (tenant_id, item_id, warehouse_id) VALUES ($1, $2, $3)",
+    )
+    .bind(tenant_id)
+    .bind(item_id)
+    .bind(warehouse_id)
+    .execute(pool)
+    .await
+    .unwrap();
 
-    Fixture { tenant_id, fiscal_year_id, token, warehouse_id, item_id, counterparty_id: counterparty_acc }
+    Fixture {
+        tenant_id,
+        fiscal_year_id,
+        token,
+        warehouse_id,
+        item_id,
+        counterparty_id: counterparty_acc,
+    }
 }
 
 fn cookie(token: &str) -> String {
@@ -121,7 +133,9 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -154,7 +168,12 @@ async fn make_document(
         )
         .await
         .unwrap();
-    assert_eq!(create.status(), StatusCode::CREATED, "document create failed: {:?}", json_body(create).await);
+    assert_eq!(
+        create.status(),
+        StatusCode::CREATED,
+        "document create failed: {:?}",
+        json_body(create).await
+    );
     let doc_id = json_body(create).await["id"].as_i64().unwrap();
 
     let line = router
@@ -163,12 +182,20 @@ async fn make_document(
             Request::post(format!("/api/v1/inventory-documents/{doc_id}/lines"))
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::COOKIE, cookie(token))
-                .body(Body::from(json!({ "itemId": fx.item_id, "quantity": qty, "unitPrice": price }).to_string()))
+                .body(Body::from(
+                    json!({ "itemId": fx.item_id, "quantity": qty, "unitPrice": price })
+                        .to_string(),
+                ))
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(line.status(), StatusCode::CREATED, "line create failed: {:?}", json_body(line).await);
+    assert_eq!(
+        line.status(),
+        StatusCode::CREATED,
+        "line create failed: {:?}",
+        json_body(line).await
+    );
     doc_id
 }
 
@@ -176,11 +203,22 @@ async fn make_document(
 /// only ever returns the requested year's data (B25), and the stock-balance
 /// figure matches an independently-posted set of documents exactly.
 #[sqlx::test(migrations = "./migrations")]
-async fn fiscal_year_scoping_and_stock_balance_agree_with_canonical_formula(pool: PgPool) -> sqlx::Result<()> {
+async fn fiscal_year_scoping_and_stock_balance_agree_with_canonical_formula(
+    pool: PgPool,
+) -> sqlx::Result<()> {
     let fx = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
-    make_document(&router, &fx.token, &fx, "receipt", "2018-04-01", 100.0, 1000).await;
+    make_document(
+        &router,
+        &fx.token,
+        &fx,
+        "receipt",
+        "2018-04-01",
+        100.0,
+        1000,
+    )
+    .await;
     make_document(&router, &fx.token, &fx, "issue", "2018-04-05", 30.0, 1000).await;
 
     // A second fiscal year with its own activity -- must not leak in.
@@ -191,8 +229,20 @@ async fn fiscal_year_scoping_and_stock_balance_agree_with_canonical_formula(pool
     .bind(fx.tenant_id)
     .fetch_one(&pool)
     .await?;
-    let other_fx = Fixture { fiscal_year_id: other_fy, ..fx.clone() };
-    make_document(&router, &fx.token, &other_fx, "receipt", "2019-04-01", 9_999.0, 1000).await;
+    let other_fx = Fixture {
+        fiscal_year_id: other_fy,
+        ..fx.clone()
+    };
+    make_document(
+        &router,
+        &fx.token,
+        &other_fx,
+        "receipt",
+        "2019-04-01",
+        9_999.0,
+        1000,
+    )
+    .await;
 
     let resp = router
         .clone()
@@ -210,7 +260,11 @@ async fn fiscal_year_scoping_and_stock_balance_agree_with_canonical_formula(pool
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
     let rows = body["rows"].as_array().unwrap();
-    assert_eq!(rows.len(), 1, "only the fixture's one item, from the requested year only");
+    assert_eq!(
+        rows.len(),
+        1,
+        "only the fixture's one item, from the requested year only"
+    );
     // 100 + 30 = 130 units moved total, never touching the other year's 9,999.
     assert_eq!(rows[0]["quantity"], "130");
 
@@ -228,7 +282,12 @@ async fn fiscal_year_scoping_and_stock_balance_agree_with_canonical_formula(pool
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let stock = json_body(resp).await;
-    let row = stock["rows"].as_array().unwrap().iter().find(|r| r["itemId"] == fx.item_id).unwrap();
+    let row = stock["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["itemId"] == fx.item_id)
+        .unwrap();
     // 100 receipt - 30 issue = 70 on hand, matching 5.3's canonical formula.
     assert_eq!(row["onHand"], "70");
     assert_eq!(row["isLowStock"], false); // 70 > min_stock 50
@@ -242,7 +301,16 @@ async fn fiscal_year_scoping_and_stock_balance_agree_with_canonical_formula(pool
 async fn report_never_writes_and_creates_no_runtime_table(pool: PgPool) -> sqlx::Result<()> {
     let fx = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
-    make_document(&router, &fx.token, &fx, "receipt", "2018-04-01", 100.0, 1000).await;
+    make_document(
+        &router,
+        &fx.token,
+        &fx,
+        "receipt",
+        "2018-04-01",
+        100.0,
+        1000,
+    )
+    .await;
 
     let before: (i64, i64) = sqlx::query_as(
         "SELECT count(*)::bigint, coalesce(sum(quantity), 0)::bigint FROM inventory_document_lines",
@@ -264,7 +332,12 @@ async fn report_never_writes_and_creates_no_runtime_table(pool: PgPool) -> sqlx:
             )
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK, "groupBy={group_by} failed: {:?}", json_body(resp).await);
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "groupBy={group_by} failed: {:?}",
+            json_body(resp).await
+        );
     }
 
     let after: (i64, i64) = sqlx::query_as(
@@ -272,7 +345,10 @@ async fn report_never_writes_and_creates_no_runtime_table(pool: PgPool) -> sqlx:
     )
     .fetch_one(&pool)
     .await?;
-    assert_eq!(before, after, "B3: running the report must never mutate inventory_document_lines");
+    assert_eq!(
+        before, after,
+        "B3: running the report must never mutate inventory_document_lines"
+    );
 
     // B16: no `temp_RJ_*`-style permanent table left behind anywhere.
     let leftover: i64 = sqlx::query_scalar(

@@ -21,10 +21,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -54,11 +55,13 @@ async fn seed(pool: &PgPool) -> Fixture {
     .unwrap();
     // The journal generator rolls up to Kol level (03-08.md §8.1), so the Kol header rows
     // themselves must exist as real accounts, not just their Moein children.
-    sqlx::query("INSERT INTO accounts (tenant_id, general_ledger_code, name) VALUES ($1, 1, 'Assets')")
-        .bind(tenant_id)
-        .execute(pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO accounts (tenant_id, general_ledger_code, name) VALUES ($1, 1, 'Assets')",
+    )
+    .bind(tenant_id)
+    .execute(pool)
+    .await
+    .unwrap();
     sqlx::query("INSERT INTO accounts (tenant_id, general_ledger_code, name) VALUES ($1, 4, 'Revenue (Kol)')")
         .bind(tenant_id)
         .execute(pool)
@@ -80,7 +83,12 @@ async fn seed(pool: &PgPool) -> Fixture {
     .fetch_one(pool)
     .await
     .unwrap();
-    Fixture { fiscal_year_id, cash_id, revenue_id, token }
+    Fixture {
+        fiscal_year_id,
+        cash_id,
+        revenue_id,
+        token,
+    }
 }
 
 fn cookie(token: &str) -> String {
@@ -88,7 +96,9 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -165,9 +175,39 @@ async fn rolls_up_posted_vouchers_and_prevents_double_counting(pool: PgPool) -> 
     let fx = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
-    let _v1 = create_posted_voucher(&router, &fx.token, fx.fiscal_year_id, fx.cash_id, fx.revenue_id, "2024-04-01", 100, "posted").await;
-    let _v2 = create_posted_voucher(&router, &fx.token, fx.fiscal_year_id, fx.cash_id, fx.revenue_id, "2024-04-02", 200, "posted").await;
-    let _v3 = create_posted_voucher(&router, &fx.token, fx.fiscal_year_id, fx.cash_id, fx.revenue_id, "2024-04-03", 50, "posted").await;
+    let _v1 = create_posted_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        fx.cash_id,
+        fx.revenue_id,
+        "2024-04-01",
+        100,
+        "posted",
+    )
+    .await;
+    let _v2 = create_posted_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        fx.cash_id,
+        fx.revenue_id,
+        "2024-04-02",
+        200,
+        "posted",
+    )
+    .await;
+    let _v3 = create_posted_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        fx.cash_id,
+        fx.revenue_id,
+        "2024-04-03",
+        50,
+        "posted",
+    )
+    .await;
 
     // 2. Generate over the date range -> one journal voucher with gross debit/credit per Kol.
     let generate = router
@@ -243,8 +283,28 @@ async fn a_still_draft_voucher_in_range_is_rejected(pool: PgPool) -> sqlx::Resul
     let fx = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
-    let _posted = create_posted_voucher(&router, &fx.token, fx.fiscal_year_id, fx.cash_id, fx.revenue_id, "2024-04-01", 100, "posted").await;
-    let _draft = create_posted_voucher(&router, &fx.token, fx.fiscal_year_id, fx.cash_id, fx.revenue_id, "2024-04-02", 100, "draft").await;
+    let _posted = create_posted_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        fx.cash_id,
+        fx.revenue_id,
+        "2024-04-01",
+        100,
+        "posted",
+    )
+    .await;
+    let _draft = create_posted_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        fx.cash_id,
+        fx.revenue_id,
+        "2024-04-02",
+        100,
+        "draft",
+    )
+    .await;
 
     let generate = router
         .oneshot(

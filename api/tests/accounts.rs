@@ -13,10 +13,11 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 
 async fn seed_session(pool: &PgPool) -> (i64, String) {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -44,7 +45,9 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -62,7 +65,8 @@ async fn create(
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::COOKIE, cookie(token))
                 .body(Body::from(
-                    serde_json::json!({ "parentId": parent_id, "code": code, "name": name }).to_string(),
+                    serde_json::json!({ "parentId": parent_id, "code": code, "name": name })
+                        .to_string(),
                 ))
                 .unwrap(),
         )
@@ -122,7 +126,10 @@ async fn build_hierarchy_with_correct_child_counts(pool: PgPool) -> sqlx::Result
         .await
         .unwrap();
     let body = json_body(moein_detail).await;
-    assert!(body["childCount"].as_i64().unwrap() > 0, "moein should not be a leaf");
+    assert!(
+        body["childCount"].as_i64().unwrap() > 0,
+        "moein should not be a leaf"
+    );
     assert_eq!(body["codeLtr"], "1-11");
     assert_eq!(body["fullNamePath"], "Assets/Cash");
 
@@ -246,7 +253,9 @@ async fn promote_and_demote_move_a_leaf_between_levels(pool: PgPool) -> sqlx::Re
             Request::post(format!("/api/v1/accounts/{taf2_id}/demote"))
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::COOKIE, cookie(&token))
-                .body(Body::from(serde_json::json!({ "parentId": taf1_id }).to_string()))
+                .body(Body::from(
+                    serde_json::json!({ "parentId": taf1_id }).to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -267,9 +276,10 @@ async fn promote_and_demote_move_a_leaf_between_levels(pool: PgPool) -> sqlx::Re
 
 #[sqlx::test(migrations = "./migrations")]
 async fn lock_requires_superuser(pool: PgPool) -> sqlx::Result<()> {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(&pool)
-        .await?;
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(&pool)
+            .await?;
     let admin_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) VALUES ($1, 'root', 'x', true) RETURNING id",
     )

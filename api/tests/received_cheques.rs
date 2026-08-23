@@ -23,10 +23,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -95,11 +96,18 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn post(router: &axum::Router, token: &str, path: &str, body: Value) -> axum::response::Response {
+async fn post(
+    router: &axum::Router,
+    token: &str,
+    path: &str,
+    body: Value,
+) -> axum::response::Response {
     router
         .clone()
         .oneshot(
@@ -152,9 +160,21 @@ async fn full_lifecycle_reaches_every_state(pool: PgPool) -> sqlx::Result<()> {
     assert_eq!(receive.status(), StatusCode::CREATED);
     let cheque_id = json_body(receive).await["id"].as_i64().unwrap();
 
-    let detail = json_body(get(&router, &fx.token, &format!("/api/v1/received-cheques/{cheque_id}")).await).await;
+    let detail = json_body(
+        get(
+            &router,
+            &fx.token,
+            &format!("/api/v1/received-cheques/{cheque_id}"),
+        )
+        .await,
+    )
+    .await;
     assert_eq!(detail["status"], "in_hand");
-    assert_eq!(detail["events"].as_array().unwrap().len(), 1, "receipt itself must log an event");
+    assert_eq!(
+        detail["events"].as_array().unwrap().len(),
+        1,
+        "receipt itself must log an event"
+    );
     assert_eq!(detail["events"][0]["resultingStatus"], "in_hand");
 
     // T4: deposit -> at_bank.
@@ -184,10 +204,21 @@ async fn full_lifecycle_reaches_every_state(pool: PgPool) -> sqlx::Result<()> {
     assert_eq!(bounce.status(), StatusCode::OK);
     let after_bounce = json_body(bounce).await;
     assert_eq!(after_bounce["status"], "bounced");
-    assert_ne!(after_bounce["status"], "in_hand", "B11: bounced must be distinct from in_hand");
+    assert_ne!(
+        after_bounce["status"], "in_hand",
+        "B11: bounced must be distinct from in_hand"
+    );
 
     // The event log agrees with the master row (B10 fix).
-    let detail2 = json_body(get(&router, &fx.token, &format!("/api/v1/received-cheques/{cheque_id}")).await).await;
+    let detail2 = json_body(
+        get(
+            &router,
+            &fx.token,
+            &format!("/api/v1/received-cheques/{cheque_id}"),
+        )
+        .await,
+    )
+    .await;
     let events = detail2["events"].as_array().unwrap();
     assert_eq!(events.last().unwrap()["resultingStatus"], "bounced");
     assert_eq!(detail2["status"], events.last().unwrap()["resultingStatus"]);
@@ -364,7 +395,10 @@ async fn receive_validates_amount_description_and_date_range(pool: PgPool) -> sq
     )
     .await;
     assert_eq!(bad_amount.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(json_body(bad_amount).await["error"], "amount_must_be_positive");
+    assert_eq!(
+        json_body(bad_amount).await["error"],
+        "amount_must_be_positive"
+    );
 
     let blank_desc = post(
         &router,
@@ -400,7 +434,10 @@ async fn receive_validates_amount_description_and_date_range(pool: PgPool) -> sq
     )
     .await;
     assert_eq!(outside_range.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(json_body(outside_range).await["error"], "date_outside_fiscal_year");
+    assert_eq!(
+        json_body(outside_range).await["error"],
+        "date_outside_fiscal_year"
+    );
 
     Ok(())
 }
@@ -451,7 +488,15 @@ async fn amend_only_allowed_while_in_hand(pool: PgPool) -> sqlx::Result<()> {
         .await
         .unwrap();
     assert_eq!(amend.status(), StatusCode::NO_CONTENT);
-    let after = json_body(get(&router, &fx.token, &format!("/api/v1/received-cheques/{cheque_id}")).await).await;
+    let after = json_body(
+        get(
+            &router,
+            &fx.token,
+            &format!("/api/v1/received-cheques/{cheque_id}"),
+        )
+        .await,
+    )
+    .await;
     assert_eq!(after["amount"], 1_200_000);
 
     // Deposit, then editing should be rejected (no longer in_hand).
@@ -489,7 +534,10 @@ async fn amend_only_allowed_while_in_hand(pool: PgPool) -> sqlx::Result<()> {
         .await
         .unwrap();
     assert_eq!(amend_after_deposit.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(json_body(amend_after_deposit).await["error"], "cheque_not_in_hand");
+    assert_eq!(
+        json_body(amend_after_deposit).await["error"],
+        "cheque_not_in_hand"
+    );
 
     Ok(())
 }
@@ -531,11 +579,17 @@ async fn each_transition_posts_its_own_balanced_voucher(pool: PgPool) -> sqlx::R
     )
     .await;
     let cheque_id = json_body(receive).await["id"].as_i64().unwrap();
-    let receipt_voucher_id =
-        json_body(get(&router, &fx.token, &format!("/api/v1/received-cheques/{cheque_id}")).await)
-            .await["voucherId"]
-            .as_i64()
-            .unwrap();
+    let receipt_voucher_id = json_body(
+        get(
+            &router,
+            &fx.token,
+            &format!("/api/v1/received-cheques/{cheque_id}"),
+        )
+        .await,
+    )
+    .await["voucherId"]
+        .as_i64()
+        .unwrap();
 
     let deposit = post(
         &router,
@@ -563,11 +617,25 @@ async fn each_transition_posts_its_own_balanced_voucher(pool: PgPool) -> sqlx::R
     .await;
     assert_eq!(collect.status(), StatusCode::OK);
 
-    let detail = json_body(get(&router, &fx.token, &format!("/api/v1/received-cheques/{cheque_id}")).await).await;
+    let detail = json_body(
+        get(
+            &router,
+            &fx.token,
+            &format!("/api/v1/received-cheques/{cheque_id}"),
+        )
+        .await,
+    )
+    .await;
     let events = detail["events"].as_array().unwrap();
-    assert_eq!(events.len(), 3, "receive, deposit, collect each log one event");
+    assert_eq!(
+        events.len(),
+        3,
+        "receive, deposit, collect each log one event"
+    );
 
-    let deposit_voucher_id = events[1]["voucherId"].as_i64().expect("deposit event must have a voucher (B13)");
+    let deposit_voucher_id = events[1]["voucherId"]
+        .as_i64()
+        .expect("deposit event must have a voucher (B13)");
     let collect_voucher_id = events[2]["voucherId"]
         .as_i64()
         .expect("collect event must have a voucher — B13 fix, exactly what the legacy omits");
@@ -579,12 +647,16 @@ async fn each_transition_posts_its_own_balanced_voucher(pool: PgPool) -> sqlx::R
 
     // Each voucher is balanced (debit == credit) and has a real header.
     for voucher_id in [receipt_voucher_id, deposit_voucher_id, collect_voucher_id] {
-        let (total_debit, total_credit, line_count): (i64, i64, i32) =
-            sqlx::query_as("SELECT total_debit, total_credit, line_count FROM vouchers WHERE id = $1")
-                .bind(voucher_id)
-                .fetch_one(&pool)
-                .await?;
-        assert_eq!(total_debit, total_credit, "voucher {voucher_id} must balance");
+        let (total_debit, total_credit, line_count): (i64, i64, i32) = sqlx::query_as(
+            "SELECT total_debit, total_credit, line_count FROM vouchers WHERE id = $1",
+        )
+        .bind(voucher_id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            total_debit, total_credit,
+            "voucher {voucher_id} must balance"
+        );
         assert_eq!(total_debit, 750_000);
         assert_eq!(line_count, 2);
     }
@@ -635,10 +707,11 @@ async fn bounce_event_and_master_state_agree(pool: PgPool) -> sqlx::Result<()> {
     )
     .await;
 
-    let (master_status,): (String,) = sqlx::query_as("SELECT status::text FROM received_cheques WHERE id = $1")
-        .bind(cheque_id)
-        .fetch_one(&pool)
-        .await?;
+    let (master_status,): (String,) =
+        sqlx::query_as("SELECT status::text FROM received_cheques WHERE id = $1")
+            .bind(cheque_id)
+            .fetch_one(&pool)
+            .await?;
     let (event_status,): (String,) = sqlx::query_as(
         "SELECT resulting_status::text FROM received_cheque_events \
          WHERE received_cheque_id = $1 ORDER BY id DESC LIMIT 1",
@@ -648,7 +721,10 @@ async fn bounce_event_and_master_state_agree(pool: PgPool) -> sqlx::Result<()> {
     .await?;
     assert_eq!(master_status, "bounced");
     assert_eq!(event_status, "bounced");
-    assert_eq!(master_status, event_status, "B10: master and event must never disagree");
+    assert_eq!(
+        master_status, event_status,
+        "B10: master and event must never disagree"
+    );
 
     Ok(())
 }
@@ -677,27 +753,48 @@ async fn delete_only_allowed_before_any_transition(pool: PgPool) -> sqlx::Result
     )
     .await;
     let cheque_id = json_body(receive).await["id"].as_i64().unwrap();
-    let voucher_id =
-        json_body(get(&router, &fx.token, &format!("/api/v1/received-cheques/{cheque_id}")).await)
-            .await["voucherId"]
-            .as_i64()
-            .unwrap();
+    let voucher_id = json_body(
+        get(
+            &router,
+            &fx.token,
+            &format!("/api/v1/received-cheques/{cheque_id}"),
+        )
+        .await,
+    )
+    .await["voucherId"]
+        .as_i64()
+        .unwrap();
 
-    let del = delete(&router, &fx.token, &format!("/api/v1/received-cheques/{cheque_id}")).await;
+    let del = delete(
+        &router,
+        &fx.token,
+        &format!("/api/v1/received-cheques/{cheque_id}"),
+    )
+    .await;
     assert_eq!(del.status(), StatusCode::NO_CONTENT);
 
-    let after = get(&router, &fx.token, &format!("/api/v1/received-cheques/{cheque_id}")).await;
-    assert_eq!(after.status(), StatusCode::NOT_FOUND, "cheque itself must be gone");
+    let after = get(
+        &router,
+        &fx.token,
+        &format!("/api/v1/received-cheques/{cheque_id}"),
+    )
+    .await;
+    assert_eq!(
+        after.status(),
+        StatusCode::NOT_FOUND,
+        "cheque itself must be gone"
+    );
     let voucher_gone: Option<i64> = sqlx::query_scalar("SELECT id FROM vouchers WHERE id = $1")
         .bind(voucher_id)
         .fetch_optional(&pool)
         .await?;
     assert!(voucher_gone.is_none(), "voucher must be gone too (B12)");
-    let events_gone: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM received_cheque_events WHERE received_cheque_id = $1")
-            .bind(cheque_id)
-            .fetch_one(&pool)
-            .await?;
+    let events_gone: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM received_cheque_events WHERE received_cheque_id = $1",
+    )
+    .bind(cheque_id)
+    .fetch_one(&pool)
+    .await?;
     assert_eq!(events_gone, 0, "event row must be gone too (B12)");
 
     // A second cheque, deposited, is NOT deletable.
@@ -729,7 +826,12 @@ async fn delete_only_allowed_before_any_transition(pool: PgPool) -> sqlx::Result
     )
     .await;
 
-    let del2 = delete(&router, &fx.token, &format!("/api/v1/received-cheques/{cheque_id2}")).await;
+    let del2 = delete(
+        &router,
+        &fx.token,
+        &format!("/api/v1/received-cheques/{cheque_id2}"),
+    )
+    .await;
     assert_eq!(del2.status(), StatusCode::BAD_REQUEST);
     // Rejected at the status check first (no longer in_hand) -- the
     // event-count check below it exists for an in_hand cheque with extra
@@ -745,7 +847,9 @@ async fn delete_only_allowed_before_any_transition(pool: PgPool) -> sqlx::Result
 /// beneficiary and crediting notes-receivable-on-hand -- a genuine new
 /// feature (B14), never present in the legacy at all.
 #[sqlx::test(migrations = "./migrations")]
-async fn endorsement_is_a_real_terminal_transition_with_a_real_posting(pool: PgPool) -> sqlx::Result<()> {
+async fn endorsement_is_a_real_terminal_transition_with_a_real_posting(
+    pool: PgPool,
+) -> sqlx::Result<()> {
     let fx = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
@@ -782,14 +886,27 @@ async fn endorsement_is_a_real_terminal_transition_with_a_real_posting(pool: PgP
     let after = json_body(endorse).await;
     assert_eq!(after["status"], "endorsed_to_third_party");
 
-    let detail = json_body(get(&router, &fx.token, &format!("/api/v1/received-cheques/{cheque_id}")).await).await;
+    let detail = json_body(
+        get(
+            &router,
+            &fx.token,
+            &format!("/api/v1/received-cheques/{cheque_id}"),
+        )
+        .await,
+    )
+    .await;
     let events = detail["events"].as_array().unwrap();
     let endorse_event = events.last().unwrap();
     assert_eq!(endorse_event["resultingStatus"], "endorsed_to_third_party");
     assert_eq!(endorse_event["debitAccountId"], fx.beneficiary_account_id);
-    assert_eq!(endorse_event["creditAccountId"], fx.notes_receivable_account_id);
+    assert_eq!(
+        endorse_event["creditAccountId"],
+        fx.notes_receivable_account_id
+    );
 
-    let voucher_id = endorse_event["voucherId"].as_i64().expect("endorsement must post a real voucher");
+    let voucher_id = endorse_event["voucherId"]
+        .as_i64()
+        .expect("endorsement must post a real voucher");
     let (total_debit, total_credit): (i64, i64) =
         sqlx::query_as("SELECT total_debit, total_credit FROM vouchers WHERE id = $1")
             .bind(voucher_id)
@@ -803,14 +920,20 @@ async fn endorsement_is_a_real_terminal_transition_with_a_real_posting(pool: PgP
     .bind(voucher_id)
     .fetch_one(&pool)
     .await?;
-    assert_eq!(debit_line_account, fx.beneficiary_account_id, "voucher must debit the beneficiary");
+    assert_eq!(
+        debit_line_account, fx.beneficiary_account_id,
+        "voucher must debit the beneficiary"
+    );
     let credit_line_account: i64 = sqlx::query_scalar(
         "SELECT account_id FROM voucher_lines WHERE voucher_id = $1 AND credit_amount > 0",
     )
     .bind(voucher_id)
     .fetch_one(&pool)
     .await?;
-    assert_eq!(credit_line_account, fx.notes_receivable_account_id, "voucher must credit notes-receivable-on-hand");
+    assert_eq!(
+        credit_line_account, fx.notes_receivable_account_id,
+        "voucher must credit notes-receivable-on-hand"
+    );
 
     // Terminal: any further transition is rejected.
     let illegal = post(
@@ -889,29 +1012,63 @@ async fn status_and_aging_filters_actually_filter(pool: PgPool) -> sqlx::Result<
 
     // Status filter: only A and C are in_hand; B is returned_to_issuer.
     let by_status = json_body(
-        get(&router, &fx.token, "/api/v1/received-cheques?status=in_hand").await,
+        get(
+            &router,
+            &fx.token,
+            "/api/v1/received-cheques?status=in_hand",
+        )
+        .await,
     )
     .await;
-    let status_ids: Vec<i64> = by_status.as_array().unwrap().iter().map(|c| c["id"].as_i64().unwrap()).collect();
+    let status_ids: Vec<i64> = by_status
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_i64().unwrap())
+        .collect();
     assert!(status_ids.contains(&a_id));
     assert!(!status_ids.contains(&b_id));
 
     let by_returned = json_body(
-        get(&router, &fx.token, "/api/v1/received-cheques?status=returned_to_issuer").await,
+        get(
+            &router,
+            &fx.token,
+            "/api/v1/received-cheques?status=returned_to_issuer",
+        )
+        .await,
     )
     .await;
-    let returned_ids: Vec<i64> = by_returned.as_array().unwrap().iter().map(|c| c["id"].as_i64().unwrap()).collect();
+    let returned_ids: Vec<i64> = by_returned
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_i64().unwrap())
+        .collect();
     assert_eq!(returned_ids, vec![b_id]);
 
     // Aging cutoff 2018-04-15: A (due 2018-04-10, in_hand) qualifies; B (due
     // 2018-04-05 but returned) must be excluded even though its due date is
     // before the cutoff; C (due 2019-01-01) is excluded by date.
     let aging = json_body(
-        get(&router, &fx.token, "/api/v1/received-cheques?dueBefore=2018-04-15").await,
+        get(
+            &router,
+            &fx.token,
+            "/api/v1/received-cheques?dueBefore=2018-04-15",
+        )
+        .await,
     )
     .await;
-    let aging_ids: Vec<i64> = aging.as_array().unwrap().iter().map(|c| c["id"].as_i64().unwrap()).collect();
-    assert_eq!(aging_ids, vec![a_id], "aging must include A only -- B excluded by terminal status, C by date");
+    let aging_ids: Vec<i64> = aging
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(
+        aging_ids,
+        vec![a_id],
+        "aging must include A only -- B excluded by terminal status, C by date"
+    );
 
     Ok(())
 }

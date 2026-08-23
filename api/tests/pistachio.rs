@@ -45,19 +45,34 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn req(router: &axum::Router, method: &str, path: &str, token: &str, body: Value) -> axum::response::Response {
-    let mut builder = Request::builder().method(method).uri(path).header(header::COOKIE, cookie(token));
+async fn req(
+    router: &axum::Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Value,
+) -> axum::response::Response {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::COOKIE, cookie(token));
     let b = if body.is_null() {
         Body::empty()
     } else {
         builder = builder.header(header::CONTENT_TYPE, "application/json");
         Body::from(body.to_string())
     };
-    router.clone().oneshot(builder.body(b).unwrap()).await.unwrap()
+    router
+        .clone()
+        .oneshot(builder.body(b).unwrap())
+        .await
+        .unwrap()
 }
 
 async fn seed_fiscal_year(pool: &PgPool, tenant_id: i64) -> i64 {
@@ -109,7 +124,10 @@ async fn setup(pool: &PgPool) -> Fixture {
         seed_leaf_account(pool, tenant_id, 902, 2, "VAT").await,
     ];
     let resp = req(
-        &router, "POST", "/api/v1/warehouses", &token,
+        &router,
+        "POST",
+        "/api/v1/warehouses",
+        &token,
         json!({
             "name": "Main", "vatRatePct": "9",
             "purchaseAccountId": accounts[0], "purchaseReturnAccountId": accounts[1],
@@ -121,18 +139,47 @@ async fn setup(pool: &PgPool) -> Fixture {
     let warehouse_id = json_body(resp).await["id"].as_i64().unwrap();
     let counterparty_id = seed_leaf_account(pool, tenant_id, 103, 1, "Trade AR").await;
 
-    let resp = req(&router, "POST", "/api/v1/units-of-measure", &token, json!({ "name": "kg" })).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/units-of-measure",
+        &token,
+        json!({ "name": "kg" }),
+    )
+    .await;
     let uom_id = json_body(resp).await["id"].as_i64().unwrap();
 
-    req(&router, "POST", "/api/v1/pistachio-grades/seed-defaults", &token, Value::Null).await;
-    let resp = req(&router, "GET", "/api/v1/pistachio-grades", &token, Value::Null).await;
+    req(
+        &router,
+        "POST",
+        "/api/v1/pistachio-grades/seed-defaults",
+        &token,
+        Value::Null,
+    )
+    .await;
+    let resp = req(
+        &router,
+        "GET",
+        "/api/v1/pistachio-grades",
+        &token,
+        Value::Null,
+    )
+    .await;
     let grades = json_body(resp).await;
-    let grade_id = grades.as_array().unwrap().iter().find(|g| g["name"] == "Ahmad-Aghaei").unwrap()["id"]
+    let grade_id = grades
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["name"] == "Ahmad-Aghaei")
+        .unwrap()["id"]
         .as_i64()
         .unwrap();
 
     let resp = req(
-        &router, "POST", "/api/v1/items", &token,
+        &router,
+        "POST",
+        "/api/v1/items",
+        &token,
         json!({
             "code": 5, "name": "Ahmad-Aghaei pistachio", "unitOfMeasureId": uom_id, "salePrice": 1,
             "pistachioGradeId": grade_id,
@@ -142,14 +189,20 @@ async fn setup(pool: &PgPool) -> Fixture {
     let pistachio_item_id = json_body(resp).await["id"].as_i64().unwrap();
 
     let resp = req(
-        &router, "POST", "/api/v1/items", &token,
+        &router,
+        "POST",
+        "/api/v1/items",
+        &token,
         json!({ "code": 6, "name": "Ordinary item", "unitOfMeasureId": uom_id, "salePrice": 1 }),
     )
     .await;
     let ordinary_item_id = json_body(resp).await["id"].as_i64().unwrap();
 
     let resp = req(
-        &router, "POST", "/api/v1/inventory-documents", &token,
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &token,
         json!({
             "fiscalYearId": fiscal_year_id, "documentType": "receipt", "documentDate": "2027-05-01",
             "warehouseId": warehouse_id, "counterpartyAccountId": counterparty_id,
@@ -158,7 +211,12 @@ async fn setup(pool: &PgPool) -> Fixture {
     .await;
     let document_id = json_body(resp).await["id"].as_i64().unwrap();
 
-    Fixture { token, document_id, pistachio_item_id, ordinary_item_id }
+    Fixture {
+        token,
+        document_id,
+        pistachio_item_id,
+        ordinary_item_id,
+    }
 }
 
 /// Manual test #1: Example A reproduced exactly through the real HTTP API — net_weight 1877.0 kg,
@@ -177,7 +235,14 @@ async fn example_a_reproduced_through_the_api(pool: PgPool) -> sqlx::Result<()> 
 
     // Stateless preview first -- matches manual test #4's "reachable through the ordinary flow"
     // without persisting anything yet.
-    let resp = req(&router, "POST", "/api/v1/pistachio-deduction/calculate", &f.token, body.clone()).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/pistachio-deduction/calculate",
+        &f.token,
+        body.clone(),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let preview = json_body(resp).await;
     assert_eq!(preview["netWeightKg"], "1877.000");
@@ -185,7 +250,14 @@ async fn example_a_reproduced_through_the_api(pool: PgPool) -> sqlx::Result<()> 
 
     // Then the real create-line action.
     let resp = req(
-        &router, "POST", &format!("/api/v1/inventory-documents/{}/lines/pistachio", f.document_id), &f.token, body,
+        &router,
+        "POST",
+        &format!(
+            "/api/v1/inventory-documents/{}/lines/pistachio",
+            f.document_id
+        ),
+        &f.token,
+        body,
     )
     .await;
     assert_eq!(resp.status(), StatusCode::CREATED);
@@ -193,14 +265,28 @@ async fn example_a_reproduced_through_the_api(pool: PgPool) -> sqlx::Result<()> 
     assert_eq!(created["netWeightKg"], "1877.000");
     assert_eq!(created["lineAmount"], 2_346_250_000i64);
 
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{}", f.document_id), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{}", f.document_id),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let document = json_body(resp).await;
     assert_eq!(document["totalAmount"], 2_346_250_000i64);
     let lines = document["lines"].as_array().unwrap();
     assert_eq!(lines.len(), 1);
     // net weight became the line's quantity (compared numerically -- the DB round-trip's exact
     // trailing-zero scale isn't the thing under test, the value is).
-    assert_eq!(lines[0]["quantity"].as_str().unwrap().parse::<f64>().unwrap(), 1877.0);
+    assert_eq!(
+        lines[0]["quantity"]
+            .as_str()
+            .unwrap()
+            .parse::<f64>()
+            .unwrap(),
+        1877.0
+    );
     assert_eq!(lines[0]["discountAmount"], 0); // §7.5: pistachio discount/VAT always 0
     assert_eq!(lines[0]["taxAmount"], 0);
     Ok(())
@@ -219,7 +305,14 @@ async fn example_b_deduction_floor(pool: PgPool) -> sqlx::Result<()> {
         "moisturePct": "60", "blankPct": "45", "otherDeductionsKg": "0",
         "unitPrice": 1_000_000,
     });
-    let resp = req(&router, "POST", "/api/v1/pistachio-deduction/calculate", &f.token, body.clone()).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/pistachio-deduction/calculate",
+        &f.token,
+        body.clone(),
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let preview = json_body(resp).await;
     assert_eq!(preview["totalDeductionKg"], "565.000"); // shown as-is, exceeding gross
@@ -229,7 +322,14 @@ async fn example_b_deduction_floor(pool: PgPool) -> sqlx::Result<()> {
     // Saving a zero-amount pistachio line is still permitted (not silently blocked) -- it just
     // legitimately values at zero, matching the legacy's own "no error, no warning, no block".
     let resp = req(
-        &router, "POST", &format!("/api/v1/inventory-documents/{}/lines/pistachio", f.document_id), &f.token, body,
+        &router,
+        "POST",
+        &format!(
+            "/api/v1/inventory-documents/{}/lines/pistachio",
+            f.document_id
+        ),
+        &f.token,
+        body,
     )
     .await;
     assert_eq!(resp.status(), StatusCode::CREATED);
@@ -249,24 +349,52 @@ async fn mandatory_fields_rejected_when_zero(pool: PgPool) -> sqlx::Result<()> {
 
     let mut zero_bales = base.clone();
     zero_bales["baleCount"] = json!(0);
-    let resp = req(&router, "POST", "/api/v1/pistachio-deduction/calculate", &f.token, zero_bales).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/pistachio-deduction/calculate",
+        &f.token,
+        zero_bales,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
     let mut missing_bales = base.clone();
     missing_bales.as_object_mut().unwrap().remove("baleCount");
-    let resp = req(&router, "POST", "/api/v1/pistachio-deduction/calculate", &f.token, missing_bales).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/pistachio-deduction/calculate",
+        &f.token,
+        missing_bales,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY); // required JSON field entirely absent
 
     let mut zero_gross = base.clone();
     zero_gross["baleCount"] = json!(40);
     zero_gross["grossWeightKg"] = json!("0");
-    let resp = req(&router, "POST", "/api/v1/pistachio-deduction/calculate", &f.token, zero_gross).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/pistachio-deduction/calculate",
+        &f.token,
+        zero_gross,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
     let mut zero_price = base.clone();
     zero_price["baleCount"] = json!(40);
     zero_price["unitPrice"] = json!(0);
-    let resp = req(&router, "POST", "/api/v1/pistachio-deduction/calculate", &f.token, zero_price).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/pistachio-deduction/calculate",
+        &f.token,
+        zero_price,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     Ok(())
 }
@@ -283,7 +411,14 @@ async fn non_pistachio_item_rejected(pool: PgPool) -> sqlx::Result<()> {
         "baleCount": 1, "tareAllowanceKg": "0.2", "grossWeightKg": "10.0", "unitPrice": 1000,
     });
     let resp = req(
-        &router, "POST", &format!("/api/v1/inventory-documents/{}/lines/pistachio", f.document_id), &f.token, body,
+        &router,
+        "POST",
+        &format!(
+            "/api/v1/inventory-documents/{}/lines/pistachio",
+            f.document_id
+        ),
+        &f.token,
+        body,
     )
     .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);

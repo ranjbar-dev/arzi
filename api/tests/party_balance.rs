@@ -19,10 +19,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -58,7 +59,12 @@ async fn seed(pool: &PgPool) -> Fixture {
     .fetch_one(pool)
     .await
     .unwrap();
-    Fixture { tenant_id, fiscal_year_id, cash_account_id, token }
+    Fixture {
+        tenant_id,
+        fiscal_year_id,
+        cash_account_id,
+        token,
+    }
 }
 
 fn cookie(token: &str) -> String {
@@ -66,11 +72,21 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn seed_account(pool: &PgPool, tenant_id: i64, gl: i32, sub: i32, a1: i32, a2: i32, name: &str) -> i64 {
+async fn seed_account(
+    pool: &PgPool,
+    tenant_id: i64,
+    gl: i32,
+    sub: i32,
+    a1: i32,
+    a2: i32,
+    name: &str,
+) -> i64 {
     sqlx::query_scalar(
         "INSERT INTO accounts (tenant_id, general_ledger_code, subsidiary_code, analytic1_code, \
          analytic2_code, name) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
@@ -86,7 +102,14 @@ async fn seed_account(pool: &PgPool, tenant_id: i64, gl: i32, sub: i32, a1: i32,
     .unwrap()
 }
 
-async fn seed_config(pool: &PgPool, tenant_id: i64, kol: i32, moein: i32, fixed_ta1: i32, name: &str) -> i64 {
+async fn seed_config(
+    pool: &PgPool,
+    tenant_id: i64,
+    kol: i32,
+    moein: i32,
+    fixed_ta1: i32,
+    name: &str,
+) -> i64 {
     sqlx::query_scalar(
         "INSERT INTO party_account_config \
          (tenant_id, control_kol_code, control_moein_code, fixed_tafsil1_code, name, for_person, \
@@ -154,8 +177,18 @@ async fn post_voucher(
                 .unwrap()
         }
     };
-    assert_eq!(add(account_id, account_debit, account_credit).await.status(), StatusCode::CREATED);
-    assert_eq!(add(cash_account_id, account_credit, account_debit).await.status(), StatusCode::CREATED);
+    assert_eq!(
+        add(account_id, account_debit, account_credit)
+            .await
+            .status(),
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        add(cash_account_id, account_credit, account_debit)
+            .await
+            .status(),
+        StatusCode::CREATED
+    );
 
     let transition = |to: &'static str| {
         let router = router.clone();
@@ -173,7 +206,10 @@ async fn post_voucher(
                 .unwrap()
         }
     };
-    assert_eq!(transition("confirmed").await.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        transition("confirmed").await.status(),
+        StatusCode::NO_CONTENT
+    );
     assert_eq!(transition("posted").await.status(), StatusCode::NO_CONTENT);
 }
 
@@ -228,25 +264,67 @@ async fn reproduces_the_worked_example_exactly(pool: PgPool) -> sqlx::Result<()>
     .await?;
 
     // (103,1,52506,0): debit 50,000,000 / credit 12,000,000 -> Rem = -38,000,000.
-    post_voucher(&router, &fx.token, fx.fiscal_year_id, leaf_103_1, fx.cash_account_id, 50_000_000, 0).await;
-    post_voucher(&router, &fx.token, fx.fiscal_year_id, leaf_103_1, fx.cash_account_id, 0, 12_000_000).await;
+    post_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        leaf_103_1,
+        fx.cash_account_id,
+        50_000_000,
+        0,
+    )
+    .await;
+    post_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        leaf_103_1,
+        fx.cash_account_id,
+        0,
+        12_000_000,
+    )
+    .await;
     // (301,1,52506,0): debit 3,000,000 / credit 20,000,000 -> Rem = +17,000,000.
-    post_voucher(&router, &fx.token, fx.fiscal_year_id, leaf_301_1, fx.cash_account_id, 3_000_000, 0).await;
-    post_voucher(&router, &fx.token, fx.fiscal_year_id, leaf_301_1, fx.cash_account_id, 0, 20_000_000).await;
+    post_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        leaf_301_1,
+        fx.cash_account_id,
+        3_000_000,
+        0,
+    )
+    .await;
+    post_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        leaf_301_1,
+        fx.cash_account_id,
+        0,
+        20_000_000,
+    )
+    .await;
 
     let balance_resp = router
         .clone()
         .oneshot(
-            Request::get(format!("/api/v1/parties/{party_id}/balance?fiscalYearId={}", fx.fiscal_year_id))
-                .header(header::COOKIE, cookie(&fx.token))
-                .body(Body::empty())
-                .unwrap(),
+            Request::get(format!(
+                "/api/v1/parties/{party_id}/balance?fiscalYearId={}",
+                fx.fiscal_year_id
+            ))
+            .header(header::COOKIE, cookie(&fx.token))
+            .body(Body::empty())
+            .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(balance_resp.status(), StatusCode::OK);
     let balance = json_body(balance_resp).await;
-    assert_eq!(balance["total"], -21_000_000, "party 52506 should be a net debtor of 21,000,000");
+    assert_eq!(
+        balance["total"], -21_000_000,
+        "party 52506 should be a net debtor of 21,000,000"
+    );
     // 104-1 was never posted to -> dropped from the breakdown (step 5).
     assert_eq!(balance["breakdown"].as_array().unwrap().len(), 2);
 
@@ -292,15 +370,27 @@ async fn reproduces_the_worked_example_exactly(pool: PgPool) -> sqlx::Result<()>
         1
     );
 
-    post_voucher(&router, &fx.token, fx.fiscal_year_id, leaf_fixed, fx.cash_account_id, 0, 5_000_000).await;
+    post_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        leaf_fixed,
+        fx.cash_account_id,
+        0,
+        5_000_000,
+    )
+    .await;
 
     let balance_resp2 = router
         .clone()
         .oneshot(
-            Request::get(format!("/api/v1/parties/{party_id}/balance?fiscalYearId={}", fx.fiscal_year_id))
-                .header(header::COOKIE, cookie(&fx.token))
-                .body(Body::empty())
-                .unwrap(),
+            Request::get(format!(
+                "/api/v1/parties/{party_id}/balance?fiscalYearId={}",
+                fx.fiscal_year_id
+            ))
+            .header(header::COOKIE, cookie(&fx.token))
+            .body(Body::empty())
+            .unwrap(),
         )
         .await
         .unwrap();
@@ -314,33 +404,50 @@ async fn reproduces_the_worked_example_exactly(pool: PgPool) -> sqlx::Result<()>
     let card_jari_resp = router
         .clone()
         .oneshot(
-            Request::get(format!("/api/v1/parties/{party_id}/card-jari?fiscalYearId={}", fx.fiscal_year_id))
-                .header(header::COOKIE, cookie(&fx.token))
-                .body(Body::empty())
-                .unwrap(),
+            Request::get(format!(
+                "/api/v1/parties/{party_id}/card-jari?fiscalYearId={}",
+                fx.fiscal_year_id
+            ))
+            .header(header::COOKIE, cookie(&fx.token))
+            .body(Body::empty())
+            .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(card_jari_resp.status(), StatusCode::OK);
     let card_jari = json_body(card_jari_resp).await;
-    assert_eq!(card_jari["total"], -16_000_000, "Card Jari and the 3.2 balance API must agree exactly");
+    assert_eq!(
+        card_jari["total"], -16_000_000,
+        "Card Jari and the 3.2 balance API must agree exactly"
+    );
     let breakdown = card_jari["breakdown"].as_array().unwrap();
     assert_eq!(breakdown.len(), 3);
 
     // Drill-through: each row's ledgerHref points at 6.2's ledger endpoint,
     // scoped to that row's own account and the party's fiscal year -- and
     // actually resolves to a working, correctly-scoped ledger.
-    let row = breakdown.iter().find(|r| r["accountId"] == leaf_103_1).expect("leaf_103_1 row present");
+    let row = breakdown
+        .iter()
+        .find(|r| r["accountId"] == leaf_103_1)
+        .expect("leaf_103_1 row present");
     let href = row["ledgerHref"].as_str().unwrap();
     assert!(href.contains(&format!("accountIds={leaf_103_1}")));
     let ledger_resp = router
-        .oneshot(Request::get(href).header(header::COOKIE, cookie(&fx.token)).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::get(href)
+                .header(header::COOKIE, cookie(&fx.token))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(ledger_resp.status(), StatusCode::OK);
     let ledger = json_body(ledger_resp).await;
     // leaf_103_1 alone: debit 50,000,000 / credit 12,000,000 -> net -38,000,000 (debit).
-    assert_eq!(ledger["closingBalance"], json!({ "amount": 38_000_000, "side": "debit" }));
+    assert_eq!(
+        ledger["closingBalance"],
+        json!({ "amount": 38_000_000, "side": "debit" })
+    );
 
     Ok(())
 }

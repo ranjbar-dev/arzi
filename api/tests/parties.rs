@@ -13,10 +13,11 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 
 async fn seed_session(pool: &PgPool) -> (i64, i64, String) {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -44,11 +45,21 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn seed_account(pool: &PgPool, tenant_id: i64, gl: i32, sub: i32, a1: i32, a2: i32, name: &str) -> i64 {
+async fn seed_account(
+    pool: &PgPool,
+    tenant_id: i64,
+    gl: i32,
+    sub: i32,
+    a1: i32,
+    a2: i32,
+    name: &str,
+) -> i64 {
     sqlx::query_scalar(
         "INSERT INTO accounts (tenant_id, general_ledger_code, subsidiary_code, analytic1_code, \
          analytic2_code, name) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
@@ -92,7 +103,14 @@ async fn seed_config(
     .unwrap()
 }
 
-async fn account_id_by_codes(pool: &PgPool, tenant_id: i64, gl: i32, sub: i32, a1: i32, a2: i32) -> Option<i64> {
+async fn account_id_by_codes(
+    pool: &PgPool,
+    tenant_id: i64,
+    gl: i32,
+    sub: i32,
+    a1: i32,
+    a2: i32,
+) -> Option<i64> {
     sqlx::query_scalar(
         "SELECT id FROM accounts WHERE tenant_id = $1 AND general_ledger_code = $2 \
          AND subsidiary_code = $3 AND analytic1_code = $4 AND analytic2_code = $5",
@@ -116,7 +134,9 @@ async fn child_count(pool: &PgPool, account_id: i64) -> i32 {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn create_natural_person_creates_two_coordinated_leaf_accounts(pool: PgPool) -> sqlx::Result<()> {
+async fn create_natural_person_creates_two_coordinated_leaf_accounts(
+    pool: PgPool,
+) -> sqlx::Result<()> {
     let (tenant_id, _uid, token) = seed_session(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
@@ -127,8 +147,28 @@ async fn create_natural_person_creates_two_coordinated_leaf_accounts(pool: PgPoo
     seed_account(&pool, tenant_id, 109, 0, 0, 0, "Notes").await;
     let notes_moein = seed_account(&pool, tenant_id, 109, 1, 0, 0, "Notes AR").await;
 
-    let config_a = seed_config(&pool, tenant_id, 103, 1, 0, "Trade AR — persons", true, false).await;
-    let config_b = seed_config(&pool, tenant_id, 109, 1, 0, "Notes AR — persons", true, false).await;
+    let config_a = seed_config(
+        &pool,
+        tenant_id,
+        103,
+        1,
+        0,
+        "Trade AR — persons",
+        true,
+        false,
+    )
+    .await;
+    let config_b = seed_config(
+        &pool,
+        tenant_id,
+        109,
+        1,
+        0,
+        "Notes AR — persons",
+        true,
+        false,
+    )
+    .await;
 
     let resp = router
         .clone()
@@ -156,8 +196,14 @@ async fn create_natural_person_creates_two_coordinated_leaf_accounts(pool: PgPoo
     // Both leaves land at Tafsil-1 = the card number, correctly coordinated.
     let leaf_a = account_id_by_codes(&pool, tenant_id, 103, 1, 5001, 0).await;
     let leaf_b = account_id_by_codes(&pool, tenant_id, 109, 1, 5001, 0).await;
-    assert!(leaf_a.is_some(), "trade AR leaf should exist at Tafsil-1 = card number");
-    assert!(leaf_b.is_some(), "notes AR leaf should exist at Tafsil-1 = card number");
+    assert!(
+        leaf_a.is_some(),
+        "trade AR leaf should exist at Tafsil-1 = card number"
+    );
+    assert!(
+        leaf_b.is_some(),
+        "notes AR leaf should exist at Tafsil-1 = card number"
+    );
 
     let leaf_a_name: String = sqlx::query_scalar("SELECT name FROM accounts WHERE id = $1")
         .bind(leaf_a.unwrap())
@@ -183,7 +229,17 @@ async fn legal_entity_with_fixed_tafsil1_lands_at_tafsil2(pool: PgPool) -> sqlx:
     seed_account(&pool, tenant_id, 301, 2, 0, 0, "Trade AP — companies").await;
     let fixed_ta1 = seed_account(&pool, tenant_id, 301, 2, 7, 0, "Fixed control node").await;
 
-    let config_c = seed_config(&pool, tenant_id, 301, 2, 7, "Trade AP fixed — companies", false, true).await;
+    let config_c = seed_config(
+        &pool,
+        tenant_id,
+        301,
+        2,
+        7,
+        "Trade AP fixed — companies",
+        false,
+        true,
+    )
+    .await;
 
     let resp = router
         .clone()
@@ -208,7 +264,10 @@ async fn legal_entity_with_fixed_tafsil1_lands_at_tafsil2(pool: PgPool) -> sqlx:
     assert_eq!(resp.status(), StatusCode::CREATED);
 
     let leaf = account_id_by_codes(&pool, tenant_id, 301, 2, 7, 6001).await;
-    assert!(leaf.is_some(), "leaf should land at Tafsil-2 under the fixed Tafsil-1 node");
+    assert!(
+        leaf.is_some(),
+        "leaf should land at Tafsil-2 under the fixed Tafsil-1 node"
+    );
     assert_eq!(child_count(&pool, fixed_ta1).await, 1);
 
     let leaf_name: String = sqlx::query_scalar("SELECT name FROM accounts WHERE id = $1")
@@ -229,8 +288,28 @@ async fn unticking_a_childless_control_account_deletes_its_leaf(pool: PgPool) ->
     let ar_moein = seed_account(&pool, tenant_id, 103, 1, 0, 0, "Trade AR").await;
     seed_account(&pool, tenant_id, 109, 0, 0, 0, "Notes").await;
     let notes_moein = seed_account(&pool, tenant_id, 109, 1, 0, 0, "Notes AR").await;
-    let config_a = seed_config(&pool, tenant_id, 103, 1, 0, "Trade AR — persons", true, false).await;
-    let config_b = seed_config(&pool, tenant_id, 109, 1, 0, "Notes AR — persons", true, false).await;
+    let config_a = seed_config(
+        &pool,
+        tenant_id,
+        103,
+        1,
+        0,
+        "Trade AR — persons",
+        true,
+        false,
+    )
+    .await;
+    let config_b = seed_config(
+        &pool,
+        tenant_id,
+        109,
+        1,
+        0,
+        "Notes AR — persons",
+        true,
+        false,
+    )
+    .await;
 
     let create_resp = router
         .clone()
@@ -275,12 +354,16 @@ async fn unticking_a_childless_control_account_deletes_its_leaf(pool: PgPool) ->
     assert_eq!(update_resp.status(), StatusCode::NO_CONTENT);
 
     assert!(
-        account_id_by_codes(&pool, tenant_id, 109, 1, 5002, 0).await.is_none(),
+        account_id_by_codes(&pool, tenant_id, 109, 1, 5002, 0)
+            .await
+            .is_none(),
         "unticked leaf with no postings should be deleted, not just hidden"
     );
     assert_eq!(child_count(&pool, notes_moein).await, 0);
     // The still-ticked account is untouched.
-    assert!(account_id_by_codes(&pool, tenant_id, 103, 1, 5002, 0).await.is_some());
+    assert!(account_id_by_codes(&pool, tenant_id, 103, 1, 5002, 0)
+        .await
+        .is_some());
     assert_eq!(child_count(&pool, ar_moein).await, 1);
 
     Ok(())
@@ -296,7 +379,17 @@ async fn tick_state_never_leaks_between_two_different_parties(pool: PgPool) -> s
 
     seed_account(&pool, tenant_id, 103, 0, 0, 0, "Receivables").await;
     seed_account(&pool, tenant_id, 103, 1, 0, 0, "Trade AR").await;
-    let config_a = seed_config(&pool, tenant_id, 103, 1, 0, "Trade AR — persons", true, false).await;
+    let config_a = seed_config(
+        &pool,
+        tenant_id,
+        103,
+        1,
+        0,
+        "Trade AR — persons",
+        true,
+        false,
+    )
+    .await;
 
     let create = |card: i64, first: &'static str| {
         let router = router.clone();
@@ -322,7 +415,9 @@ async fn tick_state_never_leaks_between_two_different_parties(pool: PgPool) -> s
         }
     };
 
-    let p1 = json_body(create(7001, "One").await).await["id"].as_i64().unwrap();
+    let p1 = json_body(create(7001, "One").await).await["id"]
+        .as_i64()
+        .unwrap();
 
     // Party 2 is created WITHOUT ticking config_a.
     let p2_resp = router
@@ -366,8 +461,14 @@ async fn tick_state_never_leaks_between_two_different_parties(pool: PgPool) -> s
 
     let p1_ticked = p1_detail["controlAccounts"][0]["ticked"].as_bool().unwrap();
     let p2_ticked = p2_detail["controlAccounts"][0]["ticked"].as_bool().unwrap();
-    assert!(p1_ticked, "party 1 ticked config_a and should show it ticked");
-    assert!(!p2_ticked, "party 2 never ticked config_a — must not leak party 1's tick");
+    assert!(
+        p1_ticked,
+        "party 1 ticked config_a and should show it ticked"
+    );
+    assert!(
+        !p2_ticked,
+        "party 2 never ticked config_a — must not leak party 1's tick"
+    );
 
     Ok(())
 }
@@ -475,7 +576,11 @@ async fn validation_and_conflict_paths(pool: PgPool) -> sqlx::Result<()> {
         )
         .await
         .unwrap();
-    assert_eq!(two_blanks_ok_2.status(), StatusCode::CREATED, "two blank national IDs must both succeed");
+    assert_eq!(
+        two_blanks_ok_2.status(),
+        StatusCode::CREATED,
+        "two blank national IDs must both succeed"
+    );
 
     let with_nid = router
         .clone()
@@ -518,8 +623,17 @@ async fn validation_and_conflict_paths(pool: PgPool) -> sqlx::Result<()> {
     assert_eq!(json_body(dup_nid).await["error"], "duplicate_national_id");
 
     // Ticking a config whose control account doesn't exist in the chart yet.
-    let unprovisioned_config =
-        seed_config(&pool, tenant_id, 999, 1, 0, "Unprovisioned control", true, false).await;
+    let unprovisioned_config = seed_config(
+        &pool,
+        tenant_id,
+        999,
+        1,
+        0,
+        "Unprovisioned control",
+        true,
+        false,
+    )
+    .await;
     let not_provisioned = router
         .clone()
         .oneshot(
@@ -539,16 +653,20 @@ async fn validation_and_conflict_paths(pool: PgPool) -> sqlx::Result<()> {
         .await
         .unwrap();
     assert_eq!(not_provisioned.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(json_body(not_provisioned).await["error"], "control_account_not_provisioned");
+    assert_eq!(
+        json_body(not_provisioned).await["error"],
+        "control_account_not_provisioned"
+    );
 
     Ok(())
 }
 
 #[sqlx::test(migrations = "./migrations")]
 async fn lock_requires_superuser(pool: PgPool) -> sqlx::Result<()> {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(&pool)
-        .await?;
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(&pool)
+            .await?;
     let admin_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) VALUES ($1, 'root', 'x', true) RETURNING id",
     )
@@ -659,7 +777,11 @@ async fn seed_defaults_is_idempotent_and_superuser_only(pool: PgPool) -> sqlx::R
         .await
         .unwrap();
     let rows = json_body(list).await;
-    assert_eq!(rows.as_array().unwrap().len(), 10, "seeding twice must not duplicate rows");
+    assert_eq!(
+        rows.as_array().unwrap().len(),
+        10,
+        "seeding twice must not duplicate rows"
+    );
 
     Ok(())
 }

@@ -78,7 +78,12 @@
 //! infers from the abandoned schema shape, not a port of working legacy
 //! behaviour.
 
-use crate::{audit, auto_post::{self, GeneratedLine, PostingError}, db, auth::AuthUser, AppState};
+use crate::{
+    audit,
+    auth::AuthUser,
+    auto_post::{self, GeneratedLine, PostingError},
+    db, AppState,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -93,7 +98,10 @@ use sqlx::{Postgres, Transaction};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_cheques).post(receive_cheque))
-        .route("/{id}", get(get_cheque).put(amend_cheque).delete(delete_cheque))
+        .route(
+            "/{id}",
+            get(get_cheque).put(amend_cheque).delete(delete_cheque),
+        )
         .route("/{id}/deposit", post(deposit_to_bank))
         .route("/{id}/bounce", post(bounce_from_bank))
         .route("/{id}/collect", post(collect_cheque))
@@ -102,10 +110,16 @@ pub fn router() -> Router<AppState> {
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn not_found(what: &str) -> (StatusCode, Json<Value>) {
-    (StatusCode::NOT_FOUND, Json(json!({ "error": format!("{what}_not_found") })))
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": format!("{what}_not_found") })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -148,11 +162,13 @@ async fn fetch_cheque(
     tenant_id: i64,
     id: i64,
 ) -> Result<Option<ChequeRecord>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {CHEQUE_COLUMNS} FROM received_cheques WHERE tenant_id = $1 AND id = $2"))
-        .bind(tenant_id)
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await
+    sqlx::query_as(&format!(
+        "SELECT {CHEQUE_COLUMNS} FROM received_cheques WHERE tenant_id = $1 AND id = $2"
+    ))
+    .bind(tenant_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
 }
 
 #[derive(sqlx::FromRow, Serialize, Clone)]
@@ -264,18 +280,41 @@ async fn post_transition_voucher(
     actor_id: i64,
 ) -> Result<i64, (StatusCode, Json<Value>)> {
     let lines = [
-        GeneratedLine { account_id: debit_account_id, debit: amount, credit: 0, description: narration.to_string() },
-        GeneratedLine { account_id: credit_account_id, debit: 0, credit: amount, description: narration.to_string() },
+        GeneratedLine {
+            account_id: debit_account_id,
+            debit: amount,
+            credit: 0,
+            description: narration.to_string(),
+        },
+        GeneratedLine {
+            account_id: credit_account_id,
+            debit: 0,
+            credit: amount,
+            description: narration.to_string(),
+        },
     ];
-    auto_post::post_generated_voucher(tx, tenant_id, fiscal_year_id, voucher_date, narration, source_kind, source_id, &lines, actor_id)
-        .await
-        .map_err(|err| match err {
-            PostingError::AccountNotFound(_) => not_found("account"),
-            PostingError::AccountNotLeaf(_) => bad_request("account_not_leaf"),
-            PostingError::FiscalYearNotFound => not_found("fiscal_year"),
-            PostingError::FiscalYearClosed => bad_request("fiscal_year_closed"),
-            PostingError::EmptyLines | PostingError::Unbalanced | PostingError::InvalidLineAmount(_) | PostingError::Database(_) => internal_error(),
-        })
+    auto_post::post_generated_voucher(
+        tx,
+        tenant_id,
+        fiscal_year_id,
+        voucher_date,
+        narration,
+        source_kind,
+        source_id,
+        &lines,
+        actor_id,
+    )
+    .await
+    .map_err(|err| match err {
+        PostingError::AccountNotFound(_) => not_found("account"),
+        PostingError::AccountNotLeaf(_) => bad_request("account_not_leaf"),
+        PostingError::FiscalYearNotFound => not_found("fiscal_year"),
+        PostingError::FiscalYearClosed => bad_request("fiscal_year_closed"),
+        PostingError::EmptyLines
+        | PostingError::Unbalanced
+        | PostingError::InvalidLineAmount(_)
+        | PostingError::Database(_) => internal_error(),
+    })
 }
 
 /// Detaches every event referencing `voucher_id` (so the FK doesn't block
@@ -400,12 +439,13 @@ async fn fiscal_year_gate(
         return Err(FiscalYearGateError::DateOutsideRange);
     }
     if event_fiscal_year_id != received_fiscal_year_id {
-        let received_start: Option<NaiveDate> =
-            sqlx::query_scalar("SELECT start_date FROM fiscal_years WHERE tenant_id = $1 AND id = $2")
-                .bind(tenant_id)
-                .bind(received_fiscal_year_id)
-                .fetch_optional(&mut **tx)
-                .await?;
+        let received_start: Option<NaiveDate> = sqlx::query_scalar(
+            "SELECT start_date FROM fiscal_years WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(tenant_id)
+        .bind(received_fiscal_year_id)
+        .fetch_optional(&mut **tx)
+        .await?;
         if let Some(received_start) = received_start {
             if start < received_start {
                 return Err(FiscalYearGateError::PrecedesReceiptYear);
@@ -419,7 +459,9 @@ fn fiscal_year_gate_response(err: FiscalYearGateError) -> (StatusCode, Json<Valu
         FiscalYearGateError::NotFound => not_found("fiscal_year"),
         FiscalYearGateError::Closed => bad_request("fiscal_year_closed"),
         FiscalYearGateError::DateOutsideRange => bad_request("date_outside_fiscal_year"),
-        FiscalYearGateError::PrecedesReceiptYear => bad_request("fiscal_year_precedes_receipt_year"),
+        FiscalYearGateError::PrecedesReceiptYear => {
+            bad_request("fiscal_year_precedes_receipt_year")
+        }
         FiscalYearGateError::Db => internal_error(),
     }
 }
@@ -458,7 +500,9 @@ async fn receive_cheque(
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
     validate_amount_and_description(req.amount, &req.description).map_err(bad_request)?;
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let year: Option<(bool, NaiveDate, NaiveDate)> = sqlx::query_as(
         "SELECT is_active, start_date, end_date FROM fiscal_years WHERE tenant_id = $1 AND id = $2",
@@ -485,18 +529,23 @@ async fn receive_cheque(
         .await
         .map_err(account_error_response)?;
     if let Some(document_id) = req.source_document_id {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM inventory_documents WHERE tenant_id = $1 AND id = $2)")
-                .bind(auth.tenant_id)
-                .bind(document_id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|_| internal_error())?;
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM inventory_documents WHERE tenant_id = $1 AND id = $2)",
+        )
+        .bind(auth.tenant_id)
+        .bind(document_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|_| internal_error())?;
         if !exists {
             return Err(bad_request("source_document_not_found"));
         }
     }
-    let source_module: i16 = if req.source_document_id.is_some() { 1 } else { 0 };
+    let source_module: i16 = if req.source_document_id.is_some() {
+        1
+    } else {
+        0
+    };
 
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO received_cheques \
@@ -598,8 +647,13 @@ async fn amend_cheque(
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     validate_amount_and_description(req.amount, &req.description).map_err(bad_request)?;
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(existing) = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(existing) = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("cheque"));
     };
     if existing.status != "in_hand" {
@@ -658,7 +712,9 @@ async fn amend_cheque(
     // §2.3 T2: reallocates the voucher number and reposts the M_Id=21 lines —
     // delete the old receipt voucher, post a fresh one.
     if let Some(old_voucher_id) = existing.voucher_id {
-        replace_voucher(&mut tx, auth.tenant_id, id, old_voucher_id).await.map_err(|_| internal_error())?;
+        replace_voucher(&mut tx, auth.tenant_id, id, old_voucher_id)
+            .await
+            .map_err(|_| internal_error())?;
     }
     let voucher_id = post_transition_voucher(
         &mut tx,
@@ -729,7 +785,9 @@ async fn list_cheques(
     auth: AuthUser,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<ChequeRecord>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let rows: Vec<ChequeRecord> = sqlx::query_as(&format!(
         "SELECT {CHEQUE_COLUMNS} FROM received_cheques \
          WHERE tenant_id = $1 \
@@ -762,11 +820,18 @@ async fn get_cheque(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<ChequeDetail>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("cheque"));
     };
-    let events = fetch_events(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?;
+    let events = fetch_events(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
     Ok(Json(ChequeDetail { cheque, events }))
 }
@@ -797,16 +862,27 @@ async fn deposit_to_bank(
     Path(id): Path<i64>,
     Json(req): Json<DepositFields>,
 ) -> Result<Json<ChequeRecord>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("cheque"));
     };
     if cheque.status != "in_hand" && cheque.status != "bounced" {
         return Err(bad_request("cheque_not_depositable"));
     }
-    fiscal_year_gate(&mut tx, auth.tenant_id, req.common.fiscal_year_id, req.common.event_date, cheque.fiscal_year_id)
-        .await
-        .map_err(fiscal_year_gate_response)?;
+    fiscal_year_gate(
+        &mut tx,
+        auth.tenant_id,
+        req.common.fiscal_year_id,
+        req.common.event_date,
+        cheque.fiscal_year_id,
+    )
+    .await
+    .map_err(fiscal_year_gate_response)?;
     require_leaf_account(&mut tx, auth.tenant_id, req.collection_account_id)
         .await
         .map_err(account_error_response)?;
@@ -847,7 +923,12 @@ async fn deposit_to_bank(
     // §2.3 T4's voucher: M_Id=22 (shared with T5's bounce reversal, matching
     // the legacy — both are the same document family), M_Link=this event's
     // id (not the cheque id, per the spec's explicit note).
-    let narration = req.common.description.clone().unwrap_or_else(|| format!("Cheque {} deposited to bank", cheque.cheque_number.clone().unwrap_or_default()));
+    let narration = req.common.description.clone().unwrap_or_else(|| {
+        format!(
+            "Cheque {} deposited to bank",
+            cheque.cheque_number.clone().unwrap_or_default()
+        )
+    });
     let voucher_id = post_transition_voucher(
         &mut tx,
         auth.tenant_id,
@@ -882,7 +963,10 @@ async fn deposit_to_bank(
     .await
     .map_err(|_| internal_error())?;
 
-    let updated = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?.ok_or_else(internal_error)?;
+    let updated = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+        .ok_or_else(internal_error)?;
     tx.commit().await.map_err(|_| internal_error())?;
     Ok(Json(updated))
 }
@@ -895,22 +979,35 @@ async fn bounce_from_bank(
     Path(id): Path<i64>,
     Json(req): Json<TransitionFields>,
 ) -> Result<Json<ChequeRecord>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("cheque"));
     };
     if cheque.status != "at_bank" {
         return Err(bad_request("cheque_not_at_bank"));
     }
-    fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id, req.event_date, cheque.fiscal_year_id)
-        .await
-        .map_err(fiscal_year_gate_response)?;
+    fiscal_year_gate(
+        &mut tx,
+        auth.tenant_id,
+        req.fiscal_year_id,
+        req.event_date,
+        cheque.fiscal_year_id,
+    )
+    .await
+    .map_err(fiscal_year_gate_response)?;
 
     // Reverse the accounts of the deposit that put it at_bank (see module
     // doc comment) — debit the on-hand account, credit the collection
     // account, an exact reversal of T4.
     let Some((collection_account_id, on_hand_account_id)) =
-        latest_deposit_event(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+        latest_deposit_event(&mut tx, auth.tenant_id, id)
+            .await
+            .map_err(|_| internal_error())?
     else {
         return Err(internal_error()); // an at_bank cheque must have a deposit event
     };
@@ -946,7 +1043,12 @@ async fn bounce_from_bank(
     .map_err(|_| internal_error())?;
 
     // §2.3 T5's voucher: M_Id=22 (same family as T4), an exact reversal.
-    let narration = req.description.clone().unwrap_or_else(|| format!("Cheque {} bounced from bank", cheque.cheque_number.clone().unwrap_or_default()));
+    let narration = req.description.clone().unwrap_or_else(|| {
+        format!(
+            "Cheque {} bounced from bank",
+            cheque.cheque_number.clone().unwrap_or_default()
+        )
+    });
     let voucher_id = post_transition_voucher(
         &mut tx,
         auth.tenant_id,
@@ -981,7 +1083,10 @@ async fn bounce_from_bank(
     .await
     .map_err(|_| internal_error())?;
 
-    let updated = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?.ok_or_else(internal_error)?;
+    let updated = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+        .ok_or_else(internal_error)?;
     tx.commit().await.map_err(|_| internal_error())?;
     Ok(Json(updated))
 }
@@ -1002,22 +1107,35 @@ async fn collect_cheque(
     Path(id): Path<i64>,
     Json(req): Json<CollectFields>,
 ) -> Result<Json<ChequeRecord>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("cheque"));
     };
     if cheque.status != "at_bank" {
         return Err(bad_request("cheque_not_at_bank"));
     }
-    fiscal_year_gate(&mut tx, auth.tenant_id, req.common.fiscal_year_id, req.common.event_date, cheque.fiscal_year_id)
-        .await
-        .map_err(fiscal_year_gate_response)?;
+    fiscal_year_gate(
+        &mut tx,
+        auth.tenant_id,
+        req.common.fiscal_year_id,
+        req.common.event_date,
+        cheque.fiscal_year_id,
+    )
+    .await
+    .map_err(fiscal_year_gate_response)?;
     require_leaf_account(&mut tx, auth.tenant_id, req.bank_account_id)
         .await
         .map_err(account_error_response)?;
 
     let Some((collection_account_id, _on_hand_account_id)) =
-        latest_deposit_event(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?
+        latest_deposit_event(&mut tx, auth.tenant_id, id)
+            .await
+            .map_err(|_| internal_error())?
     else {
         return Err(internal_error());
     };
@@ -1054,7 +1172,12 @@ async fn collect_cheque(
     // §2.3 T6's voucher: M_Id=23. B13 fix — this is the SAME posting path as
     // every other transition, so the legacy's "collection is the only
     // treasury screen with no DMoein_Make call" defect cannot recur.
-    let narration = req.common.description.clone().unwrap_or_else(|| format!("Cheque {} collected", cheque.cheque_number.clone().unwrap_or_default()));
+    let narration = req.common.description.clone().unwrap_or_else(|| {
+        format!(
+            "Cheque {} collected",
+            cheque.cheque_number.clone().unwrap_or_default()
+        )
+    });
     let voucher_id = post_transition_voucher(
         &mut tx,
         auth.tenant_id,
@@ -1089,7 +1212,10 @@ async fn collect_cheque(
     .await
     .map_err(|_| internal_error())?;
 
-    let updated = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?.ok_or_else(internal_error)?;
+    let updated = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+        .ok_or_else(internal_error)?;
     tx.commit().await.map_err(|_| internal_error())?;
     Ok(Json(updated))
 }
@@ -1102,16 +1228,27 @@ async fn return_to_issuer(
     Path(id): Path<i64>,
     Json(req): Json<TransitionFields>,
 ) -> Result<Json<ChequeRecord>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("cheque"));
     };
     if cheque.status != "in_hand" && cheque.status != "bounced" {
         return Err(bad_request("cheque_not_returnable"));
     }
-    fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id, req.event_date, cheque.fiscal_year_id)
-        .await
-        .map_err(fiscal_year_gate_response)?;
+    fiscal_year_gate(
+        &mut tx,
+        auth.tenant_id,
+        req.fiscal_year_id,
+        req.event_date,
+        cheque.fiscal_year_id,
+    )
+    .await
+    .map_err(fiscal_year_gate_response)?;
 
     sqlx::query(
         "UPDATE received_cheques SET status = 'returned_to_issuer', returned_at = $1, \
@@ -1144,7 +1281,12 @@ async fn return_to_issuer(
     .map_err(|_| internal_error())?;
 
     // §2.3 T7's voucher: M_Id=24.
-    let narration = req.description.clone().unwrap_or_else(|| format!("Cheque {} returned to issuer", cheque.cheque_number.clone().unwrap_or_default()));
+    let narration = req.description.clone().unwrap_or_else(|| {
+        format!(
+            "Cheque {} returned to issuer",
+            cheque.cheque_number.clone().unwrap_or_default()
+        )
+    });
     let voucher_id = post_transition_voucher(
         &mut tx,
         auth.tenant_id,
@@ -1179,7 +1321,10 @@ async fn return_to_issuer(
     .await
     .map_err(|_| internal_error())?;
 
-    let updated = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?.ok_or_else(internal_error)?;
+    let updated = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+        .ok_or_else(internal_error)?;
     tx.commit().await.map_err(|_| internal_error())?;
     Ok(Json(updated))
 }
@@ -1197,14 +1342,21 @@ async fn delete_cheque(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("cheque"));
     };
     if cheque.status != "in_hand" {
         return Err(bad_request("cheque_not_deletable"));
     }
-    let events = fetch_events(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?;
+    let events = fetch_events(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?;
     if events.len() != 1 {
         return Err(bad_request("cheque_has_transition_history"));
     }
@@ -1262,16 +1414,27 @@ async fn endorse_to_third_party(
     Path(id): Path<i64>,
     Json(req): Json<EndorseFields>,
 ) -> Result<Json<ChequeRecord>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(cheque) = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("cheque"));
     };
     if cheque.status != "in_hand" && cheque.status != "bounced" {
         return Err(bad_request("cheque_not_endorsable"));
     }
-    fiscal_year_gate(&mut tx, auth.tenant_id, req.common.fiscal_year_id, req.common.event_date, cheque.fiscal_year_id)
-        .await
-        .map_err(fiscal_year_gate_response)?;
+    fiscal_year_gate(
+        &mut tx,
+        auth.tenant_id,
+        req.common.fiscal_year_id,
+        req.common.event_date,
+        cheque.fiscal_year_id,
+    )
+    .await
+    .map_err(fiscal_year_gate_response)?;
     require_leaf_account(&mut tx, auth.tenant_id, req.beneficiary_account_id)
         .await
         .map_err(account_error_response)?;
@@ -1303,11 +1466,12 @@ async fn endorse_to_third_party(
     .await
     .map_err(|_| internal_error())?;
 
-    let narration = req
-        .common
-        .description
-        .clone()
-        .unwrap_or_else(|| format!("Cheque {} endorsed to third party", cheque.cheque_number.clone().unwrap_or_default()));
+    let narration = req.common.description.clone().unwrap_or_else(|| {
+        format!(
+            "Cheque {} endorsed to third party",
+            cheque.cheque_number.clone().unwrap_or_default()
+        )
+    });
     let voucher_id = post_transition_voucher(
         &mut tx,
         auth.tenant_id,
@@ -1342,7 +1506,10 @@ async fn endorse_to_third_party(
     .await
     .map_err(|_| internal_error())?;
 
-    let updated = fetch_cheque(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?.ok_or_else(internal_error)?;
+    let updated = fetch_cheque(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+        .ok_or_else(internal_error)?;
     tx.commit().await.map_err(|_| internal_error())?;
     Ok(Json(updated))
 }

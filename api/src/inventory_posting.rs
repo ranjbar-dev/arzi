@@ -31,12 +31,19 @@ use crate::{
     inventory_documents::{self, DocumentRecord},
     AppState,
 };
-use axum::{extract::{Path, State}, http::StatusCode, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    Json,
+};
 use serde_json::{json, Value};
 use sqlx::{Postgres, Transaction};
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -105,7 +112,12 @@ fn commercial_lines(
     let inbound = matches!(document.document_type.as_str(), "receipt" | "sales_return");
 
     let mut lines = Vec::with_capacity(4);
-    let d = |account_id, debit, credit| GeneratedLine { account_id, debit, credit, description: narration.to_string() };
+    let d = |account_id, debit, credit| GeneratedLine {
+        account_id,
+        debit,
+        credit,
+        description: narration.to_string(),
+    };
     if inbound {
         lines.push(d(primary, document.gross_amount, 0));
         if document.tax_amount > 0 {
@@ -148,8 +160,18 @@ fn production_lines(
     };
     let amount = document.total_amount;
     Ok(vec![
-        GeneratedLine { account_id: finished_goods, debit: amount, credit: 0, description: narration.to_string() },
-        GeneratedLine { account_id: raw_materials, debit: 0, credit: amount, description: narration.to_string() },
+        GeneratedLine {
+            account_id: finished_goods,
+            debit: amount,
+            credit: 0,
+            description: narration.to_string(),
+        },
+        GeneratedLine {
+            account_id: raw_materials,
+            debit: 0,
+            credit: amount,
+            description: narration.to_string(),
+        },
     ])
 }
 
@@ -169,8 +191,18 @@ fn transfer_lines(
     };
     let amount = document.total_amount;
     Ok(vec![
-        GeneratedLine { account_id: destination_inventory, debit: amount, credit: 0, description: narration.to_string() },
-        GeneratedLine { account_id: source_inventory, debit: 0, credit: amount, description: narration.to_string() },
+        GeneratedLine {
+            account_id: destination_inventory,
+            debit: amount,
+            credit: 0,
+            description: narration.to_string(),
+        },
+        GeneratedLine {
+            account_id: source_inventory,
+            debit: 0,
+            credit: amount,
+            description: narration.to_string(),
+        },
     ])
 }
 
@@ -215,13 +247,19 @@ pub(crate) async fn post_document(
             let Some(destination_warehouse_id) = document.destination_warehouse_id else {
                 return Err(bad_request("destination_warehouse_required"));
             };
-            let Some(destination_accounts) = fetch_warehouse_accounts(tx, tenant_id, destination_warehouse_id)
-                .await
-                .map_err(|_| internal_error())?
+            let Some(destination_accounts) =
+                fetch_warehouse_accounts(tx, tenant_id, destination_warehouse_id)
+                    .await
+                    .map_err(|_| internal_error())?
             else {
                 return Err(not_found("destination_warehouse_not_found"));
             };
-            transfer_lines(document, &warehouse_accounts, &destination_accounts, &narration)?
+            transfer_lines(
+                document,
+                &warehouse_accounts,
+                &destination_accounts,
+                &narration,
+            )?
         }
         other => return Err(internal_error_with(other)),
     };
@@ -245,8 +283,15 @@ pub(crate) async fn post_document(
     }
 
     let voucher_id = auto_post::post_generated_voucher(
-        tx, tenant_id, document.fiscal_year_id, document.document_date, &narration, SOURCE_KIND, document.id,
-        &lines, actor_id,
+        tx,
+        tenant_id,
+        document.fiscal_year_id,
+        document.document_date,
+        &narration,
+        SOURCE_KIND,
+        document.id,
+        &lines,
+        actor_id,
     )
     .await
     .map_err(posting_error_response)?;
@@ -271,9 +316,10 @@ fn posting_error_response(err: PostingError) -> (StatusCode, Json<Value>) {
         PostingError::AccountNotLeaf(_) => bad_request("posting_account_not_leaf"),
         PostingError::FiscalYearNotFound => not_found("fiscal_year"),
         PostingError::FiscalYearClosed => bad_request("fiscal_year_closed"),
-        PostingError::EmptyLines | PostingError::Unbalanced | PostingError::InvalidLineAmount(_) | PostingError::Database(_) => {
-            internal_error()
-        }
+        PostingError::EmptyLines
+        | PostingError::Unbalanced
+        | PostingError::InvalidLineAmount(_)
+        | PostingError::Database(_) => internal_error(),
     }
 }
 
@@ -286,7 +332,9 @@ pub(crate) async fn post_document_handler(
     Path(document_id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     inventory_documents::require_permission(&auth, inventory_documents::permcodes::AMEND)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let Some(document) = inventory_documents::fetch_document(&mut tx, auth.tenant_id, document_id)
         .await
         .map_err(|_| internal_error())?
@@ -300,7 +348,11 @@ pub(crate) async fn post_document_handler(
     let voucher_id = post_document(&mut tx, auth.tenant_id, &document, auth.user_id).await?;
 
     audit::record_mutation(
-        &mut tx, auth.tenant_id, "inventory_documents", document_id, "update",
+        &mut tx,
+        auth.tenant_id,
+        "inventory_documents",
+        document_id,
+        "update",
         Some(auth.user_id),
         Some(json!({ "status": document.status })),
         Some(json!({ "status": "posted", "postedVoucherId": voucher_id })),

@@ -89,7 +89,10 @@ async fn login_session_lifecycle(pool: PgPool) -> sqlx::Result<()> {
         .unwrap();
     assert_eq!(unknown.status(), StatusCode::UNAUTHORIZED);
     let unknown_body = unknown.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(bad_body, unknown_body, "login failure must not distinguish the reason");
+    assert_eq!(
+        bad_body, unknown_body,
+        "login failure must not distinguish the reason"
+    );
 
     // Correct credentials -> 200 + session cookie.
     let ok = router
@@ -160,8 +163,7 @@ async fn login_session_lifecycle(pool: PgPool) -> sqlx::Result<()> {
 
 #[sqlx::test(migrations = "./migrations")]
 async fn sentinel_password_can_never_log_in(pool: PgPool) -> sqlx::Result<()> {
-    let (tenant_slug, username) =
-        seed_tenant_and_user(&pool, auth::NO_PASSWORD_SENTINEL).await;
+    let (tenant_slug, username) = seed_tenant_and_user(&pool, auth::NO_PASSWORD_SENTINEL).await;
     let router = app(AppState { pool });
 
     let attempt = router

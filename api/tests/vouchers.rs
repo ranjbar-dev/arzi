@@ -21,10 +21,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -69,7 +70,12 @@ async fn seed(pool: &PgPool) -> Fixture {
     .await
     .unwrap();
     let _ = account_id2;
-    Fixture { tenant_id, fiscal_year_id, account_id, token }
+    Fixture {
+        tenant_id,
+        fiscal_year_id,
+        account_id,
+        token,
+    }
 }
 
 fn cookie(token: &str) -> String {
@@ -77,7 +83,9 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -369,10 +377,13 @@ async fn list_is_actually_filtered_by_fiscal_year(pool: PgPool) -> sqlx::Result<
     let matching = router
         .clone()
         .oneshot(
-            Request::get(format!("/api/v1/vouchers?fiscalYearId={}", fx.fiscal_year_id))
-                .header(header::COOKIE, cookie(&fx.token))
-                .body(Body::empty())
-                .unwrap(),
+            Request::get(format!(
+                "/api/v1/vouchers?fiscalYearId={}",
+                fx.fiscal_year_id
+            ))
+            .header(header::COOKIE, cookie(&fx.token))
+            .body(Body::empty())
+            .unwrap(),
         )
         .await
         .unwrap();
@@ -381,10 +392,12 @@ async fn list_is_actually_filtered_by_fiscal_year(pool: PgPool) -> sqlx::Result<
 
     let other = router
         .oneshot(
-            Request::get(format!("/api/v1/vouchers?fiscalYearId={other_fiscal_year_id}"))
-                .header(header::COOKIE, cookie(&fx.token))
-                .body(Body::empty())
-                .unwrap(),
+            Request::get(format!(
+                "/api/v1/vouchers?fiscalYearId={other_fiscal_year_id}"
+            ))
+            .header(header::COOKIE, cookie(&fx.token))
+            .body(Body::empty())
+            .unwrap(),
         )
         .await
         .unwrap();

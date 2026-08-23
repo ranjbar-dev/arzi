@@ -7,7 +7,10 @@ use sqlx::{PgPool, Postgres, Transaction};
 /// field (specs/10-target-architecture.md §2.4). Called from `auth::` once
 /// tenant_id is known (from the tenant-slug lookup on login, or from the
 /// session row on every later authenticated request).
-pub async fn begin(pool: &PgPool, tenant_id: i64) -> Result<Transaction<'_, Postgres>, sqlx::Error> {
+pub async fn begin(
+    pool: &PgPool,
+    tenant_id: i64,
+) -> Result<Transaction<'_, Postgres>, sqlx::Error> {
     let mut tx = pool.begin().await?;
     sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
         .bind(tenant_id.to_string())

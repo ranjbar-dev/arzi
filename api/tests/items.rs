@@ -13,10 +13,11 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 
 async fn seed_session(pool: &PgPool) -> (i64, i64, String) {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -44,11 +45,21 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn seed_leaf_account(pool: &PgPool, tenant_id: i64, gl: i32, sub: i32, a1: i32, a2: i32, name: &str) -> i64 {
+async fn seed_leaf_account(
+    pool: &PgPool,
+    tenant_id: i64,
+    gl: i32,
+    sub: i32,
+    a1: i32,
+    a2: i32,
+    name: &str,
+) -> i64 {
     sqlx::query_scalar(
         "INSERT INTO accounts (tenant_id, general_ledger_code, subsidiary_code, analytic1_code, \
          analytic2_code, name) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
@@ -77,7 +88,12 @@ fn warehouse_payload(name: &str, accounts: [i64; 6]) -> Value {
     })
 }
 
-async fn create_warehouse(router: &axum::Router, token: &str, name: &str, accounts: [i64; 6]) -> i64 {
+async fn create_warehouse(
+    router: &axum::Router,
+    token: &str,
+    name: &str,
+    accounts: [i64; 6],
+) -> i64 {
     let resp = router
         .clone()
         .oneshot(
@@ -159,7 +175,9 @@ async fn create_warehouse_with_six_posting_accounts(pool: PgPool) -> sqlx::Resul
             Request::post("/api/v1/warehouses")
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::COOKIE, cookie(&token))
-                .body(Body::from(warehouse_payload("Bad warehouse", bad_accounts).to_string()))
+                .body(Body::from(
+                    warehouse_payload("Bad warehouse", bad_accounts).to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -194,7 +212,12 @@ async fn unit_of_measure_with_conversion_factor(pool: PgPool) -> sqlx::Result<()
         .await
         .unwrap();
     let body = json_body(resp).await;
-    let tonne = body.as_array().unwrap().iter().find(|u| u["id"] == tonne_id).unwrap();
+    let tonne = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["id"] == tonne_id)
+        .unwrap();
     assert_eq!(tonne["baseUnitId"].as_i64().unwrap(), kg_id);
     assert_eq!(tonne["conversionFactor"], "1000");
 
@@ -206,7 +229,8 @@ async fn unit_of_measure_with_conversion_factor(pool: PgPool) -> sqlx::Result<()
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::COOKIE, cookie(&token))
                 .body(Body::from(
-                    json!({ "name": "gram", "baseUnitId": tonne_id, "conversionFactor": "0.001" }).to_string(),
+                    json!({ "name": "gram", "baseUnitId": tonne_id, "conversionFactor": "0.001" })
+                        .to_string(),
                 ))
                 .unwrap(),
         )
@@ -271,7 +295,10 @@ async fn item_assigned_to_two_warehouses_via_real_junction(pool: PgPool) -> sqlx
             .await
             .unwrap();
         let body = json_body(resp).await;
-        assert!(body.as_array().unwrap().iter().any(|i| i["id"] == item_id), "missing from warehouse {wh}");
+        assert!(
+            body.as_array().unwrap().iter().any(|i| i["id"] == item_id),
+            "missing from warehouse {wh}"
+        );
     }
 
     // Duplicate code rejected.
@@ -365,7 +392,8 @@ async fn item_code_is_immutable_and_update_never_touches_it(pool: PgPool) -> sql
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::COOKIE, cookie(&token))
                 .body(Body::from(
-                    json!({ "name": "Widget renamed", "unitOfMeasureId": kg_id, "salePrice": 200 }).to_string(),
+                    json!({ "name": "Widget renamed", "unitOfMeasureId": kg_id, "salePrice": 200 })
+                        .to_string(),
                 ))
                 .unwrap(),
         )

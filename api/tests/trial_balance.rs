@@ -19,10 +19,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -50,7 +51,11 @@ async fn seed(pool: &PgPool) -> Fixture {
     .fetch_one(pool)
     .await
     .unwrap();
-    Fixture { tenant_id, fiscal_year_id, token }
+    Fixture {
+        tenant_id,
+        fiscal_year_id,
+        token,
+    }
 }
 
 fn cookie(token: &str) -> String {
@@ -58,11 +63,21 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn seed_account(pool: &PgPool, tenant_id: i64, gl: i32, sub: i32, a1: i32, a2: i32, name: &str) -> i64 {
+async fn seed_account(
+    pool: &PgPool,
+    tenant_id: i64,
+    gl: i32,
+    sub: i32,
+    a1: i32,
+    a2: i32,
+    name: &str,
+) -> i64 {
     sqlx::query_scalar(
         "INSERT INTO accounts (tenant_id, general_ledger_code, subsidiary_code, analytic1_code, \
          analytic2_code, name) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
@@ -127,8 +142,14 @@ async fn make_voucher(
                 .unwrap()
         }
     };
-    assert_eq!(add_line(account_id, amount, 0).await.status(), StatusCode::CREATED);
-    assert_eq!(add_line(contra_id, 0, amount).await.status(), StatusCode::CREATED);
+    assert_eq!(
+        add_line(account_id, amount, 0).await.status(),
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        add_line(contra_id, 0, amount).await.status(),
+        StatusCode::CREATED
+    );
 
     if post {
         let transition = |to: &'static str| {
@@ -147,7 +168,10 @@ async fn make_voucher(
                     .unwrap()
             }
         };
-        assert_eq!(transition("confirmed").await.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            transition("confirmed").await.status(),
+            StatusCode::NO_CONTENT
+        );
         assert_eq!(transition("posted").await.status(), StatusCode::NO_CONTENT);
     }
     voucher_id
@@ -168,10 +192,40 @@ async fn four_column_excludes_drafts_and_proves_balance(pool: PgPool) -> sqlx::R
     let sales = seed_account(&pool, fx.tenant_id, 40, 1, 0, 0, "Sales").await;
 
     // Two posted vouchers moving 1,000,000 and 500,000 through Cash/Sales.
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-04-01", cash, sales, 1_000_000, true).await;
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-04-05", cash, sales, 500_000, true).await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-04-01",
+        cash,
+        sales,
+        1_000_000,
+        true,
+    )
+    .await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-04-05",
+        cash,
+        sales,
+        500_000,
+        true,
+    )
+    .await;
     // A third, left as a draft -- must be excluded entirely (A8/direct test #1).
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-04-10", cash, sales, 9_999_999, false).await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-04-10",
+        cash,
+        sales,
+        9_999_999,
+        false,
+    )
+    .await;
 
     let resp = router
         .clone()
@@ -235,7 +289,17 @@ async fn fiscal_year_selector_actually_scopes_the_query(pool: PgPool) -> sqlx::R
     let cash = seed_account(&pool, fx.tenant_id, 10, 1, 0, 0, "Cash").await;
     seed_account(&pool, fx.tenant_id, 40, 0, 0, 0, "Revenue").await;
     let sales = seed_account(&pool, fx.tenant_id, 40, 1, 0, 0, "Sales").await;
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-04-01", cash, sales, 1_000_000, true).await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-04-01",
+        cash,
+        sales,
+        1_000_000,
+        true,
+    )
+    .await;
 
     let other_fy: i64 = sqlx::query_scalar(
         "INSERT INTO fiscal_years (tenant_id, year, start_date, end_date) \
@@ -244,7 +308,17 @@ async fn fiscal_year_selector_actually_scopes_the_query(pool: PgPool) -> sqlx::R
     .bind(fx.tenant_id)
     .fetch_one(&pool)
     .await?;
-    make_voucher(&router, &fx.token, other_fy, "2019-04-01", cash, sales, 7_000_000, true).await;
+    make_voucher(
+        &router,
+        &fx.token,
+        other_fy,
+        "2019-04-01",
+        cash,
+        sales,
+        7_000_000,
+        true,
+    )
+    .await;
 
     let resp = router
         .oneshot(
@@ -259,7 +333,10 @@ async fn fiscal_year_selector_actually_scopes_the_query(pool: PgPool) -> sqlx::R
         .await
         .unwrap();
     let body = json_body(resp).await;
-    assert_eq!(body["balanceProof"]["totalDebit"], 1_000_000, "must not include the other fiscal year's 7,000,000");
+    assert_eq!(
+        body["balanceProof"]["totalDebit"], 1_000_000,
+        "must not include the other fiscal year's 7,000,000"
+    );
 
     Ok(())
 }
@@ -274,8 +351,28 @@ async fn six_column_splits_opening_period_and_closing(pool: PgPool) -> sqlx::Res
     let cash = seed_account(&pool, fx.tenant_id, 10, 1, 0, 0, "Cash").await;
     let sales = seed_account(&pool, fx.tenant_id, 40, 1, 0, 0, "Sales").await;
     // Before the period: 400,000. During the period: 100,000.
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-04-01", cash, sales, 400_000, true).await;
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-06-15", cash, sales, 100_000, true).await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-04-01",
+        cash,
+        sales,
+        400_000,
+        true,
+    )
+    .await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-06-15",
+        cash,
+        sales,
+        100_000,
+        true,
+    )
+    .await;
 
     let resp = router
         .oneshot(
@@ -296,7 +393,10 @@ async fn six_column_splits_opening_period_and_closing(pool: PgPool) -> sqlx::Res
     let rows = body["rows"].as_array().unwrap();
     assert!(rows.iter().all(|r| r["level"] == 2));
 
-    let cash_row = rows.iter().find(|r| r["generalLedgerCode"] == 10).expect("cash row present");
+    let cash_row = rows
+        .iter()
+        .find(|r| r["generalLedgerCode"] == 10)
+        .expect("cash row present");
     assert_eq!(cash_row["openingDebit"], 400_000);
     assert_eq!(cash_row["periodDebit"], 100_000);
     assert_eq!(cash_row["closingDebit"], 500_000);

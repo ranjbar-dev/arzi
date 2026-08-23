@@ -9,8 +9,7 @@ async fn main() {
     // db/init/01-app-role.sh creates it) and is the pool every request uses
     // — this is the role step 1.1's RLS policies actually gate.
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let app_database_url =
-        std::env::var("APP_DATABASE_URL").expect("APP_DATABASE_URL must be set");
+    let app_database_url = std::env::var("APP_DATABASE_URL").expect("APP_DATABASE_URL must be set");
 
     // Dev convenience: run pending migrations on boot. Prod uses an explicit
     // `sqlx migrate run` step instead — no magic at startup in production,

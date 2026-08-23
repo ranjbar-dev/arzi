@@ -37,7 +37,10 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn not_found(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::NOT_FOUND, Json(json!({ "error": error })))
@@ -71,7 +74,9 @@ pub(crate) async fn get_settlement(
     auth: AuthUser,
     Path(document_id): Path<i64>,
 ) -> Result<Json<SettlementView>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let Some(document) = inventory_documents::fetch_document(&mut tx, auth.tenant_id, document_id)
         .await

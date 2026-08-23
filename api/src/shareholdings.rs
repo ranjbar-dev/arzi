@@ -30,7 +30,7 @@
 //! `ownership_percentage` itself is a display-only ratio, not money, and IS
 //! an `f64` — nothing downstream sums or compares it as currency.
 
-use crate::{audit, db, auth::AuthUser, AppState};
+use crate::{audit, auth::AuthUser, db, AppState};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -50,10 +50,16 @@ pub fn router() -> Router<AppState> {
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn not_found(what: &str) -> (StatusCode, Json<Value>) {
-    (StatusCode::NOT_FOUND, Json(json!({ "error": format!("{what}_not_found") })))
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": format!("{what}_not_found") })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -71,11 +77,16 @@ struct HoldingRow {
 
 const HOLDING_COLUMNS: &str = "id, party_id, share_count, nominal_value, join_date, exit_date";
 
-async fn fetch_all(tx: &mut Transaction<'_, Postgres>, tenant_id: i64) -> Result<Vec<HoldingRow>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {HOLDING_COLUMNS} FROM shareholdings WHERE tenant_id = $1 ORDER BY id"))
-        .bind(tenant_id)
-        .fetch_all(&mut **tx)
-        .await
+async fn fetch_all(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: i64,
+) -> Result<Vec<HoldingRow>, sqlx::Error> {
+    sqlx::query_as(&format!(
+        "SELECT {HOLDING_COLUMNS} FROM shareholdings WHERE tenant_id = $1 ORDER BY id"
+    ))
+    .bind(tenant_id)
+    .fetch_all(&mut **tx)
+    .await
 }
 
 // ---- list (with the display-only ownership_percentage) --------------------
@@ -96,15 +107,23 @@ async fn list_shareholdings(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<Vec<HoldingView>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let rows = fetch_all(&mut tx, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let rows = fetch_all(&mut tx, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
 
     let total: i64 = rows.iter().map(|r| r.share_count).sum();
     let views = rows
         .into_iter()
         .map(|r| {
-            let ownership_percentage = if total > 0 { (r.share_count as f64) / (total as f64) * 100.0 } else { 0.0 };
+            let ownership_percentage = if total > 0 {
+                (r.share_count as f64) / (total as f64) * 100.0
+            } else {
+                0.0
+            };
             HoldingView {
                 id: r.id,
                 party_id: r.party_id,
@@ -149,13 +168,16 @@ async fn create_shareholding(
     Json(req): Json<HoldingFields>,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
     validate_fields(&req).map_err(bad_request)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-
-    let party_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM parties WHERE id = $1)")
-        .bind(req.party_id)
-        .fetch_one(&mut *tx)
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
+
+    let party_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM parties WHERE id = $1)")
+            .bind(req.party_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| internal_error())?;
     if !party_exists {
         return Err(not_found("party"));
     }
@@ -199,7 +221,9 @@ async fn update_shareholding(
     Json(req): Json<HoldingFields>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
     validate_fields(&req).map_err(bad_request)?;
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let existing: Option<(i64, Option<NaiveDate>)> =
         sqlx::query_as("SELECT share_count, exit_date FROM shareholdings WHERE id = $1")
@@ -304,7 +328,9 @@ async fn profit_distribution(
     if req.profit_amount < 0 {
         return Err(bad_request("invalid_profit_amount"));
     }
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let year: Option<(NaiveDate, NaiveDate)> =
         sqlx::query_as("SELECT start_date, end_date FROM fiscal_years WHERE id = $1")
@@ -316,11 +342,15 @@ async fn profit_distribution(
         return Err(not_found("fiscal_year"));
     };
 
-    let all_holdings = fetch_all(&mut tx, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let all_holdings = fetch_all(&mut tx, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
 
-    let active: Vec<HoldingRow> =
-        all_holdings.into_iter().filter(|h| active_during(h, year_start, year_end)).collect();
+    let active: Vec<HoldingRow> = all_holdings
+        .into_iter()
+        .filter(|h| active_during(h, year_start, year_end))
+        .collect();
     if active.is_empty() {
         return Err(bad_request("no_active_shareholders"));
     }
@@ -346,7 +376,13 @@ async fn profit_distribution(
 mod tests {
     use super::*;
 
-    fn holding(id: i64, party_id: i64, share_count: i64, join: &str, exit: Option<&str>) -> HoldingRow {
+    fn holding(
+        id: i64,
+        party_id: i64,
+        share_count: i64,
+        join: &str,
+        exit: Option<&str>,
+    ) -> HoldingRow {
         HoldingRow {
             id,
             party_id,
@@ -399,7 +435,10 @@ mod tests {
         ];
         let year_start = NaiveDate::parse_from_str("2021-03-21", "%Y-%m-%d").unwrap();
         let year_end = NaiveDate::parse_from_str("2022-03-20", "%Y-%m-%d").unwrap();
-        let active: Vec<_> = all.into_iter().filter(|h| active_during(h, year_start, year_end)).collect();
+        let active: Vec<_> = all
+            .into_iter()
+            .filter(|h| active_during(h, year_start, year_end))
+            .collect();
         assert_eq!(active.len(), 2);
 
         let allocations = distribute(100_000_000, &active);

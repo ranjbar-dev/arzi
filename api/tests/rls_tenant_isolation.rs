@@ -14,8 +14,7 @@ use sqlx::{Acquire, PgPool};
 
 #[sqlx::test(migrations = "./migrations")]
 async fn cross_tenant_rows_are_invisible_and_unwritable(pool: PgPool) -> sqlx::Result<()> {
-    let app_role =
-        std::env::var("APP_DB_USER").unwrap_or_else(|_| "arzi_app".to_string());
+    let app_role = std::env::var("APP_DB_USER").unwrap_or_else(|_| "arzi_app".to_string());
 
     // sqlx::test's ephemeral per-test database doesn't inherit the
     // ALTER DEFAULT PRIVILEGES grant that db/init/01-app-role.sh set up on
@@ -54,12 +53,10 @@ async fn cross_tenant_rows_are_invisible_and_unwritable(pool: PgPool) -> sqlx::R
         .execute(&mut *tx)
         .await?;
 
-    sqlx::query(
-        "INSERT INTO users (tenant_id, username, password_hash) VALUES ($1, 'alice', 'x')",
-    )
-    .bind(tenant_1)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("INSERT INTO users (tenant_id, username, password_hash) VALUES ($1, 'alice', 'x')")
+        .bind(tenant_1)
+        .execute(&mut *tx)
+        .await?;
 
     // Insert for tenant_2 while app.tenant_id is still tenant_1 — WITH CHECK
     // must reject it.
@@ -108,13 +105,13 @@ async fn cross_tenant_rows_are_invisible_and_unwritable(pool: PgPool) -> sqlx::R
 
 #[sqlx::test(migrations = "./migrations")]
 async fn app_role_cannot_bypass_rls(pool: PgPool) -> sqlx::Result<()> {
-    let app_role =
-        std::env::var("APP_DB_USER").unwrap_or_else(|_| "arzi_app".to_string());
+    let app_role = std::env::var("APP_DB_USER").unwrap_or_else(|_| "arzi_app".to_string());
 
-    let bypasses_rls: bool = sqlx::query_scalar("SELECT rolbypassrls FROM pg_roles WHERE rolname = $1")
-        .bind(&app_role)
-        .fetch_one(&pool)
-        .await?;
+    let bypasses_rls: bool =
+        sqlx::query_scalar("SELECT rolbypassrls FROM pg_roles WHERE rolname = $1")
+            .bind(&app_role)
+            .fetch_one(&pool)
+            .await?;
     assert!(!bypasses_rls, "API role must not have BYPASSRLS");
 
     let is_superuser: bool = sqlx::query_scalar("SELECT rolsuper FROM pg_roles WHERE rolname = $1")

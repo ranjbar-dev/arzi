@@ -45,19 +45,34 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn req(router: &axum::Router, method: &str, path: &str, token: &str, body: Value) -> axum::response::Response {
-    let mut builder = Request::builder().method(method).uri(path).header(header::COOKIE, cookie(token));
+async fn req(
+    router: &axum::Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: Value,
+) -> axum::response::Response {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::COOKIE, cookie(token));
     let b = if body.is_null() {
         Body::empty()
     } else {
         builder = builder.header(header::CONTENT_TYPE, "application/json");
         Body::from(body.to_string())
     };
-    router.clone().oneshot(builder.body(b).unwrap()).await.unwrap()
+    router
+        .clone()
+        .oneshot(builder.body(b).unwrap())
+        .await
+        .unwrap()
 }
 
 async fn seed_fiscal_year(pool: &PgPool, tenant_id: i64) -> i64 {
@@ -107,7 +122,10 @@ async fn setup(pool: &PgPool) -> Fixture {
         seed_leaf_account(pool, tenant_id, 902, 2, "VAT").await,
     ];
     let resp = req(
-        &router, "POST", "/api/v1/warehouses", &token,
+        &router,
+        "POST",
+        "/api/v1/warehouses",
+        &token,
         json!({
             "name": "Main", "vatRatePct": "9",
             "purchaseAccountId": accounts[0], "purchaseReturnAccountId": accounts[1],
@@ -120,17 +138,30 @@ async fn setup(pool: &PgPool) -> Fixture {
     let counterparty_id = seed_leaf_account(pool, tenant_id, 103, 1, "Trade AR").await;
     let misc_account_id = seed_leaf_account(pool, tenant_id, 104, 1, "Misc").await;
 
-    let resp = req(&router, "POST", "/api/v1/units-of-measure", &token, json!({ "name": "kg" })).await;
+    let resp = req(
+        &router,
+        "POST",
+        "/api/v1/units-of-measure",
+        &token,
+        json!({ "name": "kg" }),
+    )
+    .await;
     let uom_id = json_body(resp).await["id"].as_i64().unwrap();
     let resp = req(
-        &router, "POST", "/api/v1/items", &token,
+        &router,
+        "POST",
+        "/api/v1/items",
+        &token,
         json!({ "code": 1, "name": "Item", "unitOfMeasureId": uom_id, "salePrice": 1000 }),
     )
     .await;
     let item_id = json_body(resp).await["id"].as_i64().unwrap();
 
     let resp = req(
-        &router, "POST", "/api/v1/inventory-documents", &token,
+        &router,
+        "POST",
+        "/api/v1/inventory-documents",
+        &token,
         json!({
             "fiscalYearId": fiscal_year_id, "documentType": "issue", "documentDate": "2027-05-01",
             "warehouseId": warehouse_id, "counterpartyAccountId": counterparty_id,
@@ -139,17 +170,33 @@ async fn setup(pool: &PgPool) -> Fixture {
     .await;
     let document_id = json_body(resp).await["id"].as_i64().unwrap();
     req(
-        &router, "POST", &format!("/api/v1/inventory-documents/{document_id}/lines"), &token,
+        &router,
+        "POST",
+        &format!("/api/v1/inventory-documents/{document_id}/lines"),
+        &token,
         json!({ "itemId": item_id, "quantity": "10", "unitPrice": 1_000_000 }), // invoice total 10,000,000
     )
     .await;
 
-    Fixture { token, document_id, misc_account_id }
+    Fixture {
+        token,
+        document_id,
+        misc_account_id,
+    }
 }
 
-async fn attach_cheque(router: &axum::Router, f: &Fixture, fiscal_year_id: i64, date: &str, amount: i64) {
+async fn attach_cheque(
+    router: &axum::Router,
+    f: &Fixture,
+    fiscal_year_id: i64,
+    date: &str,
+    amount: i64,
+) {
     let resp = req(
-        router, "POST", "/api/v1/received-cheques", &f.token,
+        router,
+        "POST",
+        "/api/v1/received-cheques",
+        &f.token,
         json!({
             "fiscalYearId": fiscal_year_id, "receivedOn": date, "dueDate": date, "amount": amount,
             "description": "settlement test cheque", "payerAccountId": f.misc_account_id,
@@ -160,9 +207,18 @@ async fn attach_cheque(router: &axum::Router, f: &Fixture, fiscal_year_id: i64, 
     assert_eq!(resp.status(), StatusCode::CREATED, "cheque create failed");
 }
 
-async fn attach_deposit_slip(router: &axum::Router, f: &Fixture, fiscal_year_id: i64, date: &str, amount: i64) {
+async fn attach_deposit_slip(
+    router: &axum::Router,
+    f: &Fixture,
+    fiscal_year_id: i64,
+    date: &str,
+    amount: i64,
+) {
     let resp = req(
-        router, "POST", "/api/v1/deposit-slips", &f.token,
+        router,
+        "POST",
+        "/api/v1/deposit-slips",
+        &f.token,
         json!({
             "fiscalYearId": fiscal_year_id, "slipDate": date, "amount": amount,
             "payerAccountId": f.misc_account_id, "bankAccountId": f.misc_account_id,
@@ -170,11 +226,18 @@ async fn attach_deposit_slip(router: &axum::Router, f: &Fixture, fiscal_year_id:
         }),
     )
     .await;
-    assert_eq!(resp.status(), StatusCode::CREATED, "deposit slip create failed");
+    assert_eq!(
+        resp.status(),
+        StatusCode::CREATED,
+        "deposit slip create failed"
+    );
 }
 
 async fn fiscal_year_id_of(pool: &PgPool) -> i64 {
-    sqlx::query_scalar("SELECT id FROM fiscal_years LIMIT 1").fetch_one(pool).await.unwrap()
+    sqlx::query_scalar("SELECT id FROM fiscal_years LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap()
 }
 
 /// Manual test #1/#2: a deposit slip and two cheques attached, all three appear sorted by date,
@@ -190,7 +253,14 @@ async fn attached_instruments_sorted_with_outstanding(pool: PgPool) -> sqlx::Res
     attach_deposit_slip(&router, &f, fiscal_year_id, "2027-05-03", 3_000_000).await;
     attach_cheque(&router, &f, fiscal_year_id, "2027-05-07", 1_000_000).await;
 
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{}/settlement", f.document_id), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{}/settlement", f.document_id),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
 
@@ -200,7 +270,10 @@ async fn attached_instruments_sorted_with_outstanding(pool: PgPool) -> sqlx::Res
 
     let instruments = body["instruments"].as_array().unwrap();
     assert_eq!(instruments.len(), 3);
-    let dates: Vec<&str> = instruments.iter().map(|i| i["date"].as_str().unwrap()).collect();
+    let dates: Vec<&str> = instruments
+        .iter()
+        .map(|i| i["date"].as_str().unwrap())
+        .collect();
     assert_eq!(dates, vec!["2027-05-03", "2027-05-07", "2027-05-10"]); // real date order
     assert_eq!(instruments[0]["kind"], "deposit_slip");
     assert_eq!(instruments[1]["kind"], "received_cheque");
@@ -219,7 +292,14 @@ async fn over_settlement_permitted_and_visible(pool: PgPool) -> sqlx::Result<()>
     attach_cheque(&router, &f, fiscal_year_id, "2027-05-05", 8_000_000).await;
     attach_deposit_slip(&router, &f, fiscal_year_id, "2027-05-06", 7_000_000).await;
 
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{}/settlement", f.document_id), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{}/settlement", f.document_id),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::OK); // not blocked
     let body = json_body(resp).await;
     assert_eq!(body["settledTotal"], 15_000_000);
@@ -246,7 +326,14 @@ async fn unlinked_instruments_do_not_appear(pool: PgPool) -> sqlx::Result<()> {
     .await;
     assert_eq!(resp.status(), StatusCode::CREATED);
 
-    let resp = req(&router, "GET", &format!("/api/v1/inventory-documents/{}/settlement", f.document_id), &f.token, Value::Null).await;
+    let resp = req(
+        &router,
+        "GET",
+        &format!("/api/v1/inventory-documents/{}/settlement", f.document_id),
+        &f.token,
+        Value::Null,
+    )
+    .await;
     let body = json_body(resp).await;
     assert_eq!(body["settledTotal"], 0);
     assert_eq!(body["outstandingAmount"], 10_000_000);

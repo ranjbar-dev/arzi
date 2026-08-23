@@ -32,10 +32,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
 
     async fn make_user(pool: &PgPool, tenant_id: i64, username: &str, superuser: bool) -> String {
         let user_id: i64 = sqlx::query_scalar(
@@ -137,7 +138,9 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -193,13 +196,22 @@ async fn post_voucher(
         .await;
     }
     for to in ["confirmed", "posted"] {
-        req(router, "POST", &format!("/api/v1/vouchers/{id}/transition"), token, json!({ "to": to })).await;
+        req(
+            router,
+            "POST",
+            &format!("/api/v1/vouchers/{id}/transition"),
+            token,
+            json!({ "to": to }),
+        )
+        .await;
     }
     id
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn non_admin_rejected_and_carry_forward_blocked_until_close(pool: PgPool) -> sqlx::Result<()> {
+async fn non_admin_rejected_and_carry_forward_blocked_until_close(
+    pool: PgPool,
+) -> sqlx::Result<()> {
     let fx = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
@@ -247,7 +259,10 @@ async fn non_admin_rejected_and_carry_forward_blocked_until_close(pool: PgPool) 
     )
     .await;
     assert_eq!(carry_before_close.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(json_body(carry_before_close).await["error"], "books_not_closed");
+    assert_eq!(
+        json_body(carry_before_close).await["error"],
+        "books_not_closed"
+    );
 
     Ok(())
 }
@@ -257,7 +272,16 @@ async fn destination_in_source_rejected_by_id_not_string_shape(pool: PgPool) -> 
     let fx = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
-    post_voucher(&router, &fx.admin_token, fx.outgoing_fy, "2024-04-01", fx.cash_id, fx.revenue_id, 1000).await;
+    post_voucher(
+        &router,
+        &fx.admin_token,
+        fx.outgoing_fy,
+        "2024-04-01",
+        fx.cash_id,
+        fx.revenue_id,
+        1000,
+    )
+    .await;
 
     // destination = the revenue LEAF itself, under the ticked revenue Kol. This is exactly the
     // shape the legacy's sentinel-padded string test would fail to catch when a code has no dash
@@ -287,8 +311,26 @@ async fn close_then_carry_forward_succeeds(pool: PgPool) -> sqlx::Result<()> {
     let router = app(AppState { pool: pool.clone() });
 
     // Revenue 1000 credit, Expense 300 debit, leaving Cash at a net debit of 700.
-    post_voucher(&router, &fx.admin_token, fx.outgoing_fy, "2024-04-01", fx.cash_id, fx.revenue_id, 1000).await;
-    post_voucher(&router, &fx.admin_token, fx.outgoing_fy, "2024-04-02", fx.expense_id, fx.cash_id, 300).await;
+    post_voucher(
+        &router,
+        &fx.admin_token,
+        fx.outgoing_fy,
+        "2024-04-01",
+        fx.cash_id,
+        fx.revenue_id,
+        1000,
+    )
+    .await;
+    post_voucher(
+        &router,
+        &fx.admin_token,
+        fx.outgoing_fy,
+        "2024-04-02",
+        fx.expense_id,
+        fx.cash_id,
+        300,
+    )
+    .await;
 
     // 3. close-books: zero Revenue + Expense into the summary destination.
     let close = req(
@@ -307,7 +349,17 @@ async fn close_then_carry_forward_succeeds(pool: PgPool) -> sqlx::Result<()> {
     assert_eq!(close.status(), StatusCode::CREATED);
     let close_voucher_id = json_body(close).await["id"].as_i64().unwrap();
 
-    let close_detail = json_body(req(&router, "GET", &format!("/api/v1/vouchers/{close_voucher_id}"), &fx.admin_token, Value::Null).await).await;
+    let close_detail = json_body(
+        req(
+            &router,
+            "GET",
+            &format!("/api/v1/vouchers/{close_voucher_id}"),
+            &fx.admin_token,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
     assert_eq!(close_detail["totalDebit"], 1300); // balanced by construction
     assert_eq!(close_detail["totalCredit"], 1300);
     assert_eq!(close_detail["lineCount"], 4); // 2 leaves x 2 lines each
@@ -330,7 +382,14 @@ async fn close_then_carry_forward_succeeds(pool: PgPool) -> sqlx::Result<()> {
 
     // 4. post the closing voucher.
     for to in ["confirmed", "posted"] {
-        let t = req(&router, "POST", &format!("/api/v1/vouchers/{close_voucher_id}/transition"), &fx.admin_token, json!({ "to": to })).await;
+        let t = req(
+            &router,
+            "POST",
+            &format!("/api/v1/vouchers/{close_voucher_id}/transition"),
+            &fx.admin_token,
+            json!({ "to": to }),
+        )
+        .await;
         assert_eq!(t.status(), StatusCode::NO_CONTENT);
     }
 
@@ -353,14 +412,27 @@ async fn close_then_carry_forward_succeeds(pool: PgPool) -> sqlx::Result<()> {
 
     // Opening balances in the new fiscal year match the prior year's remaining
     // (post-close, balance-sheet) balances: Cash net debit 700, Summary net credit 700.
-    let opening_detail = json_body(req(&router, "GET", &format!("/api/v1/vouchers/{opening_voucher_id}"), &fx.admin_token, Value::Null).await).await;
+    let opening_detail = json_body(
+        req(
+            &router,
+            "GET",
+            &format!("/api/v1/vouchers/{opening_voucher_id}"),
+            &fx.admin_token,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
     assert_eq!(opening_detail["totalDebit"], 1400); // (700 Cash + 700 Summary), balanced
     assert_eq!(opening_detail["totalCredit"], 1400);
     let lines = opening_detail["lines"].as_array().unwrap();
     let cash_line = lines.iter().find(|l| l["accountId"] == fx.cash_id).unwrap();
     assert_eq!(cash_line["debitAmount"], 700);
     assert_eq!(cash_line["creditAmount"], 0);
-    let summary_line = lines.iter().find(|l| l["accountId"] == fx.summary_id).unwrap();
+    let summary_line = lines
+        .iter()
+        .find(|l| l["accountId"] == fx.summary_id)
+        .unwrap();
     assert_eq!(summary_line["creditAmount"], 700);
     assert_eq!(summary_line["debitAmount"], 0);
 
@@ -386,7 +458,14 @@ async fn close_then_carry_forward_succeeds(pool: PgPool) -> sqlx::Result<()> {
     // Post that new closing voucher too -- now the driving query genuinely finds nothing left
     // (self-limiting, #15): both Cash and Summary already net to zero in the outgoing year.
     for to in ["confirmed", "posted"] {
-        req(&router, "POST", &format!("/api/v1/vouchers/{}/transition", body["closingVoucherId"]), &fx.admin_token, json!({ "to": to })).await;
+        req(
+            &router,
+            "POST",
+            &format!("/api/v1/vouchers/{}/transition", body["closingVoucherId"]),
+            &fx.admin_token,
+            json!({ "to": to }),
+        )
+        .await;
     }
     let rerun2 = req(
         &router,

@@ -74,11 +74,13 @@ async fn get_user_permissions(
     let mut tx = db::begin(&state.pool, admin.0.tenant_id)
         .await
         .map_err(|_| internal_error())?;
-    let ids: Vec<i32> = sqlx::query_scalar("SELECT permission_id FROM user_permissions WHERE user_id = $1 ORDER BY permission_id")
-        .bind(id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
+    let ids: Vec<i32> = sqlx::query_scalar(
+        "SELECT permission_id FROM user_permissions WHERE user_id = $1 ORDER BY permission_id",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
     Ok(Json(ids))
 }
@@ -285,12 +287,13 @@ async fn set_user_password(
         .await
         .map_err(|_| internal_error())?;
 
-    let result = sqlx::query("UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2")
-        .bind(&hash)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
+    let result =
+        sqlx::query("UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2")
+            .bind(&hash)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| internal_error())?;
     if result.rows_affected() == 0 {
         return Err((
             StatusCode::NOT_FOUND,
@@ -336,13 +339,12 @@ async fn replace_user_permissions(
         .await
         .map_err(|_| internal_error())?;
 
-    let before: Vec<i32> = sqlx::query_scalar(
-        "SELECT permission_id FROM user_permissions WHERE user_id = $1",
-    )
-    .bind(id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|_| internal_error())?;
+    let before: Vec<i32> =
+        sqlx::query_scalar("SELECT permission_id FROM user_permissions WHERE user_id = $1")
+            .bind(id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|_| internal_error())?;
     let before: std::collections::HashSet<i32> = before.into_iter().collect();
     let after: std::collections::HashSet<i32> = req.permission_ids.iter().copied().collect();
 

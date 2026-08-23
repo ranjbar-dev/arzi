@@ -20,10 +20,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -51,7 +52,11 @@ async fn seed(pool: &PgPool) -> Fixture {
     .fetch_one(pool)
     .await
     .unwrap();
-    Fixture { tenant_id, fiscal_year_id, token }
+    Fixture {
+        tenant_id,
+        fiscal_year_id,
+        token,
+    }
 }
 
 fn cookie(token: &str) -> String {
@@ -59,11 +64,21 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
-async fn seed_account(pool: &PgPool, tenant_id: i64, gl: i32, sub: i32, a1: i32, a2: i32, name: &str) -> i64 {
+async fn seed_account(
+    pool: &PgPool,
+    tenant_id: i64,
+    gl: i32,
+    sub: i32,
+    a1: i32,
+    a2: i32,
+    name: &str,
+) -> i64 {
     sqlx::query_scalar(
         "INSERT INTO accounts (tenant_id, general_ledger_code, subsidiary_code, analytic1_code, \
          analytic2_code, name) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
@@ -125,8 +140,14 @@ async fn make_voucher(
                 .unwrap()
         }
     };
-    assert_eq!(add_line(account_id, debit, credit).await.status(), StatusCode::CREATED);
-    assert_eq!(add_line(contra_id, credit, debit).await.status(), StatusCode::CREATED);
+    assert_eq!(
+        add_line(account_id, debit, credit).await.status(),
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        add_line(contra_id, credit, debit).await.status(),
+        StatusCode::CREATED
+    );
 
     let transition = |to: &'static str| {
         let router = router.clone();
@@ -144,7 +165,10 @@ async fn make_voucher(
                 .unwrap()
         }
     };
-    assert_eq!(transition("confirmed").await.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        transition("confirmed").await.status(),
+        StatusCode::NO_CONTENT
+    );
     assert_eq!(transition("posted").await.status(), StatusCode::NO_CONTENT);
 }
 
@@ -152,7 +176,9 @@ async fn make_voucher(
 /// immediately with no journal generation ever run, plus #2 (opening
 /// balance is one net figure) and #4 (same-voucher tie-break is stable).
 #[sqlx::test(migrations = "./migrations")]
-async fn ledger_works_without_journal_generation_and_nets_the_opening_balance(pool: PgPool) -> sqlx::Result<()> {
+async fn ledger_works_without_journal_generation_and_nets_the_opening_balance(
+    pool: PgPool,
+) -> sqlx::Result<()> {
     let fx = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
@@ -161,10 +187,40 @@ async fn ledger_works_without_journal_generation_and_nets_the_opening_balance(po
     let sales = seed_account(&pool, fx.tenant_id, 40, 1, 0, 0, "Sales").await;
 
     // Before the window: debit 1,000 and credit 400 -> net opening = -600 (debit).
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-04-01", cash, sales, 1_000, 0).await;
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-04-02", cash, sales, 0, 400).await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-04-01",
+        cash,
+        sales,
+        1_000,
+        0,
+    )
+    .await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-04-02",
+        cash,
+        sales,
+        0,
+        400,
+    )
+    .await;
     // Two lines of the SAME voucher hitting Cash, inside the window -> tie-break test.
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-06-01", cash, sales, 200, 0).await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-06-01",
+        cash,
+        sales,
+        200,
+        0,
+    )
+    .await;
 
     let resp = router
         .clone()
@@ -183,12 +239,18 @@ async fn ledger_works_without_journal_generation_and_nets_the_opening_balance(po
     let body = json_body(resp).await;
 
     // No journal generation ever ran -- direct B6 test: data present anyway.
-    assert_eq!(body["openingBalance"], json!({ "amount": 600, "side": "debit" }));
+    assert_eq!(
+        body["openingBalance"],
+        json!({ "amount": 600, "side": "debit" })
+    );
     let rows = body["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["debit"], 200);
     // Opening -600 + this period's -200 (debit) = -800 net -> 800 debit.
-    assert_eq!(body["closingBalance"], json!({ "amount": 800, "side": "debit" }));
+    assert_eq!(
+        body["closingBalance"],
+        json!({ "amount": 800, "side": "debit" })
+    );
 
     Ok(())
 }
@@ -198,7 +260,9 @@ async fn ledger_works_without_journal_generation_and_nets_the_opening_balance(po
 /// ledger") case -- proven by requesting the SAME two accounts both ways and
 /// getting identical figures, plus the strict `< from_date` opening boundary.
 #[sqlx::test(migrations = "./migrations")]
-async fn consolidated_and_coordinate_views_agree_and_boundary_is_strict(pool: PgPool) -> sqlx::Result<()> {
+async fn consolidated_and_coordinate_views_agree_and_boundary_is_strict(
+    pool: PgPool,
+) -> sqlx::Result<()> {
     let fx = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
@@ -208,8 +272,28 @@ async fn consolidated_and_coordinate_views_agree_and_boundary_is_strict(pool: Pg
     let sales = seed_account(&pool, fx.tenant_id, 40, 1, 0, 0, "Sales").await;
 
     // Exactly on the from-date boundary -> must land in the PERIOD, not opening (B5: `< from_date`).
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-06-01", cash, sales, 500, 0).await;
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-06-02", bank, sales, 0, 300).await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-06-01",
+        cash,
+        sales,
+        500,
+        0,
+    )
+    .await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-06-02",
+        bank,
+        sales,
+        0,
+        300,
+    )
+    .await;
 
     let coordinate = router
         .clone()
@@ -226,7 +310,10 @@ async fn consolidated_and_coordinate_views_agree_and_boundary_is_strict(pool: Pg
         .unwrap();
     let coordinate_body = json_body(coordinate).await;
     // The 2018-06-01 debit line lands in the period (2 rows total: cash + bank), opening is zero.
-    assert_eq!(coordinate_body["openingBalance"], json!({ "amount": 0, "side": "credit" }));
+    assert_eq!(
+        coordinate_body["openingBalance"],
+        json!({ "amount": 0, "side": "credit" })
+    );
     assert_eq!(coordinate_body["rows"].as_array().unwrap().len(), 2);
 
     let ids = router
@@ -246,8 +333,14 @@ async fn consolidated_and_coordinate_views_agree_and_boundary_is_strict(pool: Pg
     // Same accounts, same window, reached via the arbitrary-id-list path
     // (TMoein's own use case) -- B4 fix: identical opening AND identical
     // movement, because both legs share the one predicate constant.
-    assert_eq!(ids_body["openingBalance"], coordinate_body["openingBalance"]);
-    assert_eq!(ids_body["closingBalance"], coordinate_body["closingBalance"]);
+    assert_eq!(
+        ids_body["openingBalance"],
+        coordinate_body["openingBalance"]
+    );
+    assert_eq!(
+        ids_body["closingBalance"],
+        coordinate_body["closingBalance"]
+    );
     assert_eq!(ids_body["rows"].as_array().unwrap().len(), 2);
 
     Ok(())
@@ -323,7 +416,9 @@ async fn locked_segment_rejects_non_admin_with_the_real_rule(pool: PgPool) -> sq
 /// The party-balance list (BedBes equivalent): B5's `< from_date` boundary
 /// applied there too, debtor/creditor sign flip, and turnover filtering.
 #[sqlx::test(migrations = "./migrations")]
-async fn party_balances_apply_the_strict_boundary_and_debtor_creditor_sign_flip(pool: PgPool) -> sqlx::Result<()> {
+async fn party_balances_apply_the_strict_boundary_and_debtor_creditor_sign_flip(
+    pool: PgPool,
+) -> sqlx::Result<()> {
     let fx = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
@@ -371,7 +466,17 @@ async fn party_balances_apply_the_strict_boundary_and_debtor_creditor_sign_flip(
 
     // Debit 2,000,000 on the party's leaf, dated exactly on from_date -> B5:
     // must land in the period, not the opening (strictly `< from_date`).
-    make_voucher(&router, &fx.token, fx.fiscal_year_id, "2018-06-01", leaf, cash, 2_000_000, 0).await;
+    make_voucher(
+        &router,
+        &fx.token,
+        fx.fiscal_year_id,
+        "2018-06-01",
+        leaf,
+        cash,
+        2_000_000,
+        0,
+    )
+    .await;
 
     let resp = router
         .clone()
@@ -389,11 +494,21 @@ async fn party_balances_apply_the_strict_boundary_and_debtor_creditor_sign_flip(
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
     let rows = body["rows"].as_array().unwrap();
-    let row = rows.iter().find(|r| r["cardNumber"] == 900).expect("party 900 present");
-    assert_eq!(row["openingBalance"], json!({ "amount": 0, "side": "credit" }), "the on-boundary debit must not be in the opening");
+    let row = rows
+        .iter()
+        .find(|r| r["cardNumber"] == 900)
+        .expect("party 900 present");
+    assert_eq!(
+        row["openingBalance"],
+        json!({ "amount": 0, "side": "credit" }),
+        "the on-boundary debit must not be in the opening"
+    );
     assert_eq!(row["periodDebit"], 2_000_000);
     // debit 2,000,000, no credit -> net -2,000,000 -> a debtor.
-    assert_eq!(row["closingBalance"], json!({ "amount": 2_000_000, "side": "debit" }));
+    assert_eq!(
+        row["closingBalance"],
+        json!({ "amount": 2_000_000, "side": "debit" })
+    );
 
     // Debtor-side filter with a matching amount window keeps the row.
     let debtors_only = router
@@ -426,7 +541,11 @@ async fn party_balances_apply_the_strict_boundary_and_debtor_creditor_sign_flip(
         .await
         .unwrap();
     let creditors_body = json_body(creditors_only).await;
-    assert!(creditors_body["rows"].as_array().unwrap().iter().all(|r| r["cardNumber"] != 900));
+    assert!(creditors_body["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|r| r["cardNumber"] != 900));
 
     Ok(())
 }

@@ -371,12 +371,11 @@ async fn admin_can_create_activate_and_manage_a_user(pool: PgPool) -> sqlx::Resu
         .unwrap();
     assert_eq!(grant_resp.status(), StatusCode::NO_CONTENT);
 
-    let granted: Vec<i32> = sqlx::query_scalar(
-        "SELECT permission_id FROM user_permissions WHERE user_id = $1",
-    )
-    .bind(new_user_id)
-    .fetch_all(&pool)
-    .await?;
+    let granted: Vec<i32> =
+        sqlx::query_scalar("SELECT permission_id FROM user_permissions WHERE user_id = $1")
+            .bind(new_user_id)
+            .fetch_all(&pool)
+            .await?;
     assert_eq!(granted, vec![1101]);
 
     // Replace again with an empty set -> the old grant is gone, atomically.
@@ -394,10 +393,11 @@ async fn admin_can_create_activate_and_manage_a_user(pool: PgPool) -> sqlx::Resu
         .unwrap();
     assert_eq!(clear_resp.status(), StatusCode::NO_CONTENT);
 
-    let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM user_permissions WHERE user_id = $1")
-        .bind(new_user_id)
-        .fetch_one(&pool)
-        .await?;
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM user_permissions WHERE user_id = $1")
+            .bind(new_user_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!(remaining, 0);
 
     Ok(())

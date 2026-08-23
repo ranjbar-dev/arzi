@@ -3,7 +3,10 @@
 //! unbalanced set is rejected with nothing persisted; a bad account partway
 //! through a multi-line call rolls back the whole thing.
 
-use api::{auto_post::{post_generated_voucher, GeneratedLine, PostingError}, db};
+use api::{
+    auto_post::{post_generated_voucher, GeneratedLine, PostingError},
+    db,
+};
 use sqlx::PgPool;
 
 struct Fixture {
@@ -15,10 +18,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash) VALUES ($1, 'root', 'x') RETURNING id",
     )
@@ -50,7 +54,13 @@ async fn seed(pool: &PgPool) -> Fixture {
     .fetch_one(pool)
     .await
     .unwrap();
-    Fixture { tenant_id, fiscal_year_id, cash_account_id, revenue_account_id, user_id }
+    Fixture {
+        tenant_id,
+        fiscal_year_id,
+        cash_account_id,
+        revenue_account_id,
+        user_id,
+    }
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -88,12 +98,11 @@ async fn balanced_tuples_post_as_a_non_manual_voucher(pool: PgPool) -> sqlx::Res
     .expect("balanced tuples should post");
     tx.commit().await?;
 
-    let (total_debit, total_credit, line_count): (i64, i64, i32) = sqlx::query_as(
-        "SELECT total_debit, total_credit, line_count FROM vouchers WHERE id = $1",
-    )
-    .bind(voucher_id)
-    .fetch_one(&pool)
-    .await?;
+    let (total_debit, total_credit, line_count): (i64, i64, i32) =
+        sqlx::query_as("SELECT total_debit, total_credit, line_count FROM vouchers WHERE id = $1")
+            .bind(voucher_id)
+            .fetch_one(&pool)
+            .await?;
     assert_eq!((total_debit, total_credit, line_count), (1000, 1000, 2));
 
     let source_modules: Vec<i16> =
@@ -101,7 +110,10 @@ async fn balanced_tuples_post_as_a_non_manual_voucher(pool: PgPool) -> sqlx::Res
             .bind(voucher_id)
             .fetch_all(&pool)
             .await?;
-    assert!(source_modules.iter().all(|&m| m == 1), "every line must be marked non-manual (source_kind 1)");
+    assert!(
+        source_modules.iter().all(|&m| m == 1),
+        "every line must be marked non-manual (source_kind 1)"
+    );
 
     Ok(())
 }
@@ -112,8 +124,18 @@ async fn unbalanced_tuples_are_rejected_with_nothing_persisted(pool: PgPool) -> 
     let mut tx = db::begin(&pool, fx.tenant_id).await?;
 
     let lines = vec![
-        GeneratedLine { account_id: fx.cash_account_id, debit: 1000, credit: 0, description: "x".into() },
-        GeneratedLine { account_id: fx.revenue_account_id, debit: 0, credit: 500, description: "y".into() },
+        GeneratedLine {
+            account_id: fx.cash_account_id,
+            debit: 1000,
+            credit: 0,
+            description: "x".into(),
+        },
+        GeneratedLine {
+            account_id: fx.revenue_account_id,
+            debit: 0,
+            credit: 500,
+            description: "y".into(),
+        },
     ];
 
     let result = post_generated_voucher(
@@ -131,8 +153,13 @@ async fn unbalanced_tuples_are_rejected_with_nothing_persisted(pool: PgPool) -> 
     assert!(matches!(result, Err(PostingError::Unbalanced)));
     tx.rollback().await?;
 
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM vouchers").fetch_one(&pool).await?;
-    assert_eq!(count, 0, "no voucher row should exist after an unbalanced post");
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM vouchers")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(
+        count, 0,
+        "no voucher row should exist after an unbalanced post"
+    );
 
     Ok(())
 }
@@ -144,9 +171,24 @@ async fn a_bad_account_partway_through_leaves_nothing_written(pool: PgPool) -> s
 
     let nonexistent_account_id = 999_999;
     let lines = vec![
-        GeneratedLine { account_id: fx.cash_account_id, debit: 1000, credit: 0, description: "line1".into() },
-        GeneratedLine { account_id: fx.revenue_account_id, debit: 0, credit: 500, description: "line2".into() },
-        GeneratedLine { account_id: nonexistent_account_id, debit: 0, credit: 500, description: "line3 bad account".into() },
+        GeneratedLine {
+            account_id: fx.cash_account_id,
+            debit: 1000,
+            credit: 0,
+            description: "line1".into(),
+        },
+        GeneratedLine {
+            account_id: fx.revenue_account_id,
+            debit: 0,
+            credit: 500,
+            description: "line2".into(),
+        },
+        GeneratedLine {
+            account_id: nonexistent_account_id,
+            debit: 0,
+            credit: 500,
+            description: "line3 bad account".into(),
+        },
     ];
 
     let result = post_generated_voucher(
@@ -161,11 +203,17 @@ async fn a_bad_account_partway_through_leaves_nothing_written(pool: PgPool) -> s
         fx.user_id,
     )
     .await;
-    assert!(matches!(result, Err(PostingError::AccountNotFound(id)) if id == nonexistent_account_id));
+    assert!(
+        matches!(result, Err(PostingError::AccountNotFound(id)) if id == nonexistent_account_id)
+    );
     tx.rollback().await?;
 
-    let voucher_count: i64 = sqlx::query_scalar("SELECT count(*) FROM vouchers").fetch_one(&pool).await?;
-    let line_count: i64 = sqlx::query_scalar("SELECT count(*) FROM voucher_lines").fetch_one(&pool).await?;
+    let voucher_count: i64 = sqlx::query_scalar("SELECT count(*) FROM vouchers")
+        .fetch_one(&pool)
+        .await?;
+    let line_count: i64 = sqlx::query_scalar("SELECT count(*) FROM voucher_lines")
+        .fetch_one(&pool)
+        .await?;
     assert_eq!((voucher_count, line_count), (0, 0));
 
     Ok(())
@@ -184,8 +232,18 @@ async fn non_leaf_account_is_rejected(pool: PgPool) -> sqlx::Result<()> {
     let mut tx = db::begin(&pool, fx.tenant_id).await?;
 
     let lines = vec![
-        GeneratedLine { account_id: non_leaf_id, debit: 100, credit: 0, description: "x".into() },
-        GeneratedLine { account_id: fx.cash_account_id, debit: 0, credit: 100, description: "y".into() },
+        GeneratedLine {
+            account_id: non_leaf_id,
+            debit: 100,
+            credit: 0,
+            description: "x".into(),
+        },
+        GeneratedLine {
+            account_id: fx.cash_account_id,
+            debit: 0,
+            credit: 100,
+            description: "y".into(),
+        },
     ];
     let result = post_generated_voucher(
         &mut tx,

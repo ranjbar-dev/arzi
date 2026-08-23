@@ -25,12 +25,12 @@
 //! action on an existing node.
 
 use crate::{
-    audit, db,
+    audit,
     auth::{
         authz::{Perm, RequirePermission, RequireSuperuser},
         AuthUser,
     },
-    AppState,
+    db, AppState,
 };
 
 /// Marker types for `RequirePermission<P>` — one per accounting-core chart-
@@ -150,10 +150,12 @@ async fn fetch_account(
     tx: &mut Transaction<'_, Postgres>,
     id: i64,
 ) -> Result<Option<AccountRecord>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE id = $1"))
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await
+    sqlx::query_as(&format!(
+        "SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE id = $1"
+    ))
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
 }
 
 /// The immediate parent of `account`, found by segment-prefix match (no
@@ -181,7 +183,9 @@ async fn fetch_parent(
         ),
         _ => unreachable!(),
     };
-    let mut query = sqlx::query_as(&sql).bind(tenant_id).bind(account.general_ledger_code);
+    let mut query = sqlx::query_as(&sql)
+        .bind(tenant_id)
+        .bind(account.general_ledger_code);
     if account.level >= 3 {
         query = query.bind(account.subsidiary_code);
     }
@@ -196,11 +200,13 @@ async fn adjust_child_count(
     account_id: i64,
     delta: i32,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE accounts SET child_count = child_count + $1, updated_at = now() WHERE id = $2")
-        .bind(delta)
-        .bind(account_id)
-        .execute(&mut **tx)
-        .await?;
+    sqlx::query(
+        "UPDATE accounts SET child_count = child_count + $1, updated_at = now() WHERE id = $2",
+    )
+    .bind(delta)
+    .bind(account_id)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 
@@ -234,7 +240,9 @@ async fn list_accounts(
         .await
         .map_err(|_| internal_error())?,
         Some(parent_id) => {
-            let Some(parent) = fetch_account(&mut tx, parent_id).await.map_err(|_| internal_error())?
+            let Some(parent) = fetch_account(&mut tx, parent_id)
+                .await
+                .map_err(|_| internal_error())?
             else {
                 return Err(not_found());
             };
@@ -260,14 +268,19 @@ async fn list_accounts(
                     _ => unreachable!(),
                 };
                 let sql = sql.replace("{cols}", ACCOUNT_COLUMNS) + &format!(" ORDER BY {order_by}");
-                let mut query = sqlx::query_as(&sql).bind(auth.tenant_id).bind(parent.general_ledger_code);
+                let mut query = sqlx::query_as(&sql)
+                    .bind(auth.tenant_id)
+                    .bind(parent.general_ledger_code);
                 if parent.level >= 2 {
                     query = query.bind(parent.subsidiary_code);
                 }
                 if parent.level >= 3 {
                     query = query.bind(parent.analytic1_code);
                 }
-                query.fetch_all(&mut *tx).await.map_err(|_| internal_error())?
+                query
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|_| internal_error())?
             }
         }
     };
@@ -289,7 +302,11 @@ struct AccountDetail {
 /// The four legacy display formats (03-01-a.md §1.4), computed from the
 /// tuple — never stored. `ancestor_names` is ordered shallow-to-deep (Kol
 /// first), i.e. every level strictly above `account.level`.
-fn render_display(account: &AccountRecord, ancestor_names: &[String], widths: &[i32; 4]) -> AccountDetail {
+fn render_display(
+    account: &AccountRecord,
+    ancestor_names: &[String],
+    widths: &[i32; 4],
+) -> AccountDetail {
     let codes = [
         account.general_ledger_code,
         account.subsidiary_code,
@@ -346,7 +363,10 @@ fn render_display(account: &AccountRecord, ancestor_names: &[String], widths: &[
 /// Digit widths from 1.1's `account_code_format`, falling back to the
 /// legacy's own hard-coded defaults (03-01-a.md §1.3) when a tenant hasn't
 /// configured them (no tenant-provisioning flow seeds this table yet).
-async fn code_widths(tx: &mut Transaction<'_, Postgres>, tenant_id: i64) -> Result<[i32; 4], sqlx::Error> {
+async fn code_widths(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: i64,
+) -> Result<[i32; 4], sqlx::Error> {
     let rows: Vec<(i16, i16)> =
         sqlx::query_as("SELECT level, width FROM account_code_format WHERE tenant_id = $1")
             .bind(tenant_id)
@@ -371,7 +391,10 @@ async fn get_account(
         .await
         .map_err(|_| internal_error())?;
 
-    let Some(account) = fetch_account(&mut tx, id).await.map_err(|_| internal_error())? else {
+    let Some(account) = fetch_account(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found());
     };
 
@@ -386,7 +409,9 @@ async fn get_account(
     }
     ancestor_names.reverse(); // was deep-to-shallow; display wants shallow-to-deep.
 
-    let widths = code_widths(&mut tx, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let widths = code_widths(&mut tx, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
 
     Ok(Json(render_display(&account, &ancestor_names, &widths)))
@@ -422,7 +447,10 @@ async fn create_account(
     let (parent, level) = match req.parent_id {
         None => (None, 1i16),
         Some(pid) => {
-            let Some(parent) = fetch_account(&mut tx, pid).await.map_err(|_| internal_error())? else {
+            let Some(parent) = fetch_account(&mut tx, pid)
+                .await
+                .map_err(|_| internal_error())?
+            else {
                 return Err(not_found());
             };
             if parent.level == 4 {
@@ -458,7 +486,9 @@ async fn create_account(
     .map_err(conflict_or_internal)?;
 
     if let Some(p) = &parent {
-        adjust_child_count(&mut tx, p.id, 1).await.map_err(|_| internal_error())?;
+        adjust_child_count(&mut tx, p.id, 1)
+            .await
+            .map_err(|_| internal_error())?;
     }
 
     audit::record_mutation(
@@ -501,7 +531,10 @@ async fn rename_account(
         .await
         .map_err(|_| internal_error())?;
 
-    let Some(account) = fetch_account(&mut tx, id).await.map_err(|_| internal_error())? else {
+    let Some(account) = fetch_account(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found());
     };
 
@@ -557,7 +590,10 @@ async fn recode_account(
         .await
         .map_err(|_| internal_error())?;
 
-    let Some(account) = fetch_account(&mut tx, id).await.map_err(|_| internal_error())? else {
+    let Some(account) = fetch_account(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found());
     };
     if account.child_count > 0 {
@@ -624,7 +660,10 @@ async fn promote_account(
         .await
         .map_err(|_| internal_error())?;
 
-    let Some(account) = fetch_account(&mut tx, id).await.map_err(|_| internal_error())? else {
+    let Some(account) = fetch_account(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found());
     };
     if account.child_count > 0 {
@@ -683,10 +722,14 @@ async fn promote_account(
     .map_err(conflict_or_internal)?;
 
     if let Some(p) = old_parent {
-        adjust_child_count(&mut tx, p.id, -1).await.map_err(|_| internal_error())?;
+        adjust_child_count(&mut tx, p.id, -1)
+            .await
+            .map_err(|_| internal_error())?;
     }
     if let Some(p) = new_parent {
-        adjust_child_count(&mut tx, p.id, 1).await.map_err(|_| internal_error())?;
+        adjust_child_count(&mut tx, p.id, 1)
+            .await
+            .map_err(|_| internal_error())?;
     }
 
     audit::record_mutation(
@@ -723,7 +766,10 @@ async fn demote_account(
         .await
         .map_err(|_| internal_error())?;
 
-    let Some(account) = fetch_account(&mut tx, id).await.map_err(|_| internal_error())? else {
+    let Some(account) = fetch_account(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found());
     };
     if account.child_count > 0 {
@@ -732,7 +778,9 @@ async fn demote_account(
     if account.level == 4 {
         return Err(bad_request("already_max_level"));
     }
-    let Some(target_parent) = fetch_account(&mut tx, req.parent_id).await.map_err(|_| internal_error())?
+    let Some(target_parent) = fetch_account(&mut tx, req.parent_id)
+        .await
+        .map_err(|_| internal_error())?
     else {
         return Err(bad_request("target_parent_not_found"));
     };
@@ -772,7 +820,9 @@ async fn demote_account(
     .map_err(conflict_or_internal)?;
 
     if let Some(p) = old_parent {
-        adjust_child_count(&mut tx, p.id, -1).await.map_err(|_| internal_error())?;
+        adjust_child_count(&mut tx, p.id, -1)
+            .await
+            .map_err(|_| internal_error())?;
     }
     adjust_child_count(&mut tx, target_parent.id, 1)
         .await
@@ -812,17 +862,22 @@ async fn set_locked(
         .await
         .map_err(|_| internal_error())?;
 
-    let Some(account) = fetch_account(&mut tx, id).await.map_err(|_| internal_error())? else {
+    let Some(account) = fetch_account(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found());
     };
 
-    sqlx::query("UPDATE accounts SET is_locked = $1, updated_at = now(), updated_by = $2 WHERE id = $3")
-        .bind(locked)
-        .bind(admin.user_id)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
+    sqlx::query(
+        "UPDATE accounts SET is_locked = $1, updated_at = now(), updated_by = $2 WHERE id = $3",
+    )
+    .bind(locked)
+    .bind(admin.user_id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
 
     audit::record_mutation(
         &mut tx,
@@ -874,7 +929,10 @@ async fn delete_account(
         .await
         .map_err(|_| internal_error())?;
 
-    let Some(account) = fetch_account(&mut tx, id).await.map_err(|_| internal_error())? else {
+    let Some(account) = fetch_account(&mut tx, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found());
     };
     if account.child_count > 0 {
@@ -892,7 +950,9 @@ async fn delete_account(
         .map_err(|_| internal_error())?;
 
     if let Some(p) = parent {
-        adjust_child_count(&mut tx, p.id, -1).await.map_err(|_| internal_error())?;
+        adjust_child_count(&mut tx, p.id, -1)
+            .await
+            .map_err(|_| internal_error())?;
     }
 
     audit::record_mutation(
@@ -943,7 +1003,11 @@ mod tests {
     fn renders_all_four_legacy_display_formats() {
         let account = record(1, 11, 1, 1, 4, "Petty Cash");
         let widths = [3, 3, 4, 0];
-        let detail = render_display(&account, &["Assets".into(), "Cash".into(), "On Hand".into()], &widths);
+        let detail = render_display(
+            &account,
+            &["Assets".into(), "Cash".into(), "On Hand".into()],
+            &widths,
+        );
 
         assert_eq!(detail.code_ltr, "1-11-1-1");
         assert_eq!(detail.code_rtl, "1-0001-011-001 Petty Cash");

@@ -25,7 +25,10 @@ use bigdecimal::{BigDecimal, RoundingMode, ToPrimitive};
 
 /// Rounds `value` to the nearest whole rial, ties away from zero, per this module's own decision.
 pub fn round_to_rial(value: &BigDecimal) -> i64 {
-    value.with_scale_round(0, RoundingMode::HalfUp).to_i64().unwrap_or(0)
+    value
+        .with_scale_round(0, RoundingMode::HalfUp)
+        .to_i64()
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

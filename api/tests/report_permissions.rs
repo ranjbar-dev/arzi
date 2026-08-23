@@ -20,10 +20,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let plain_user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'plain', 'x', false) RETURNING id",
@@ -51,7 +52,12 @@ async fn seed(pool: &PgPool) -> Fixture {
     .fetch_one(pool)
     .await
     .unwrap();
-    Fixture { tenant_id, plain_user_id, plain_token, fiscal_year_id }
+    Fixture {
+        tenant_id,
+        plain_user_id,
+        plain_token,
+        fiscal_year_id,
+    }
 }
 
 fn cookie(token: &str) -> String {
@@ -95,10 +101,19 @@ async fn every_report_route_rejects_a_user_with_no_grants(pool: PgPool) -> sqlx:
     for route in &routes {
         let resp = router
             .clone()
-            .oneshot(Request::get(route).header(header::COOKIE, cookie(&fx.plain_token)).body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get(route)
+                    .header(header::COOKIE, cookie(&fx.plain_token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::FORBIDDEN, "route {route} must 403 with no grants");
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "route {route} must 403 with no grants"
+        );
     }
 
     Ok(())
@@ -113,7 +128,13 @@ async fn each_new_permission_is_independently_grantable(pool: PgPool) -> sqlx::R
     let router = app(AppState { pool: pool.clone() });
     let fy = fx.fiscal_year_id;
 
-    grant(&pool, fx.tenant_id, fx.plain_user_id, "trial_balance_6_column").await;
+    grant(
+        &pool,
+        fx.tenant_id,
+        fx.plain_user_id,
+        "trial_balance_6_column",
+    )
+    .await;
 
     let six_col = router
         .clone()
@@ -125,7 +146,11 @@ async fn each_new_permission_is_independently_grantable(pool: PgPool) -> sqlx::R
         )
         .await
         .unwrap();
-    assert_eq!(six_col.status(), StatusCode::OK, "the granted report must now succeed");
+    assert_eq!(
+        six_col.status(),
+        StatusCode::OK,
+        "the granted report must now succeed"
+    );
 
     let debtors = router
         .clone()
@@ -137,9 +162,19 @@ async fn each_new_permission_is_independently_grantable(pool: PgPool) -> sqlx::R
         )
         .await
         .unwrap();
-    assert_eq!(debtors.status(), StatusCode::FORBIDDEN, "an unrelated report must still 403");
+    assert_eq!(
+        debtors.status(),
+        StatusCode::FORBIDDEN,
+        "an unrelated report must still 403"
+    );
 
-    grant(&pool, fx.tenant_id, fx.plain_user_id, "debtors_creditors_report").await;
+    grant(
+        &pool,
+        fx.tenant_id,
+        fx.plain_user_id,
+        "debtors_creditors_report",
+    )
+    .await;
     let debtors2 = router
         .oneshot(
             Request::get(format!("/api/v1/reports/party-balances?fiscalYearId={fy}&fromDate=2027-01-01&toDate=2028-01-01"))
@@ -149,7 +184,11 @@ async fn each_new_permission_is_independently_grantable(pool: PgPool) -> sqlx::R
         )
         .await
         .unwrap();
-    assert_eq!(debtors2.status(), StatusCode::OK, "granting its own id unlocks it");
+    assert_eq!(
+        debtors2.status(),
+        StatusCode::OK,
+        "granting its own id unlocks it"
+    );
 
     Ok(())
 }
@@ -167,10 +206,19 @@ async fn ledger_route_accepts_either_of_its_two_merged_ids(pool: PgPool) -> sqlx
     grant(&pool, fx.tenant_id, fx.plain_user_id, "general_ledger").await;
     let via_general = router
         .clone()
-        .oneshot(Request::get(&url).header(header::COOKIE, cookie(&fx.plain_token)).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::get(&url)
+                .header(header::COOKIE, cookie(&fx.plain_token))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_eq!(via_general.status(), StatusCode::OK, "general_ledger alone must unlock the merged route");
+    assert_eq!(
+        via_general.status(),
+        StatusCode::OK,
+        "general_ledger alone must unlock the merged route"
+    );
 
     // A second, independent user with only the subsidiary-ledger id.
     let other_user_id: i64 = sqlx::query_scalar(
@@ -191,10 +239,19 @@ async fn ledger_route_accepts_either_of_its_two_merged_ids(pool: PgPool) -> sqlx
     .await?;
     grant(&pool, fx.tenant_id, other_user_id, "view_subsidiary_ledger").await;
     let via_subsidiary = router
-        .oneshot(Request::get(&url).header(header::COOKIE, cookie(&other_token)).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::get(&url)
+                .header(header::COOKIE, cookie(&other_token))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_eq!(via_subsidiary.status(), StatusCode::OK, "view_subsidiary_ledger alone must also unlock it");
+    assert_eq!(
+        via_subsidiary.status(),
+        StatusCode::OK,
+        "view_subsidiary_ledger alone must also unlock it"
+    );
 
     Ok(())
 }

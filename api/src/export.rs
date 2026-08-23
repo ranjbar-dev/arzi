@@ -63,7 +63,10 @@ pub fn router() -> Router<AppState> {
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -95,7 +98,10 @@ pub fn write_csv(columns: &[&str], rows: &[Vec<String>]) -> Result<String, csv::
 /// Amount-looking columns (parseable as `i64`) are written as real numbers,
 /// not text — a re-importable file, unlike `MoeinZipU`'s `.asstring`-
 /// everywhere export (04-07.md §7.3).
-pub fn write_xlsx(columns: &[&str], rows: &[Vec<String>]) -> Result<Vec<u8>, rust_xlsxwriter::XlsxError> {
+pub fn write_xlsx(
+    columns: &[&str],
+    rows: &[Vec<String>],
+) -> Result<Vec<u8>, rust_xlsxwriter::XlsxError> {
     let mut workbook = rust_xlsxwriter::Workbook::new();
     let bold = rust_xlsxwriter::Format::new().set_bold();
     let sheet = workbook.add_worksheet();
@@ -119,24 +125,44 @@ pub fn write_xlsx(columns: &[&str], rows: &[Vec<String>]) -> Result<Vec<u8>, rus
     workbook.save_to_buffer()
 }
 
-fn csv_response(filename: &str, columns: &[&str], rows: &[Vec<String>]) -> Result<axum::response::Response, (StatusCode, Json<Value>)> {
+fn csv_response(
+    filename: &str,
+    columns: &[&str],
+    rows: &[Vec<String>],
+) -> Result<axum::response::Response, (StatusCode, Json<Value>)> {
     let body = write_csv(columns, rows).map_err(|_| internal_error())?;
     Ok((
         [
-            (axum::http::header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
-            (axum::http::header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}.csv\"")),
+            (
+                axum::http::header::CONTENT_TYPE,
+                "text/csv; charset=utf-8".to_string(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}.csv\""),
+            ),
         ],
         body,
     )
         .into_response())
 }
 
-fn xlsx_response(filename: &str, columns: &[&str], rows: &[Vec<String>]) -> Result<axum::response::Response, (StatusCode, Json<Value>)> {
+fn xlsx_response(
+    filename: &str,
+    columns: &[&str],
+    rows: &[Vec<String>],
+) -> Result<axum::response::Response, (StatusCode, Json<Value>)> {
     let body = write_xlsx(columns, rows).map_err(|_| internal_error())?;
     Ok((
         [
-            (axum::http::header::CONTENT_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string()),
-            (axum::http::header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}.xlsx\"")),
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}.xlsx\""),
+            ),
         ],
         body,
     )
@@ -181,7 +207,9 @@ async fn get_tax_authority_export(
     if params.format != "csv" && params.format != "xlsx" {
         return Err(bad_request("invalid_format"));
     }
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
 
     let rows: Vec<TaxRow> = sqlx::query_as(
         "SELECT v.voucher_number, vl.line_date, \
@@ -210,7 +238,17 @@ async fn get_tax_authority_export(
 
     // "شماره سند" (voucher number), not "ردیف" (row number) -- the column-
     // header fix (see module doc comment).
-    let columns = ["شماره سند", "تاریخ", "کل", "نام کل", "معین", "نام معین", "شرح", "مبلغ بدهکار", "مبلغ بستانکار"];
+    let columns = [
+        "شماره سند",
+        "تاریخ",
+        "کل",
+        "نام کل",
+        "معین",
+        "نام معین",
+        "شرح",
+        "مبلغ بدهکار",
+        "مبلغ بستانکار",
+    ];
     let data_rows: Vec<Vec<String>> = rows
         .iter()
         .map(|r| {
@@ -248,7 +286,11 @@ mod tests {
 
     #[test]
     fn csv_quotes_a_comma_and_never_breaks_the_row() {
-        let out = write_csv(&["a", "b"], &[vec!["hello, world".to_string(), "x".to_string()]]).unwrap();
+        let out = write_csv(
+            &["a", "b"],
+            &[vec!["hello, world".to_string(), "x".to_string()]],
+        )
+        .unwrap();
         let mut reader = csv::Reader::from_reader(out.as_bytes());
         let record = reader.records().next().unwrap().unwrap();
         assert_eq!(&record[0], "hello, world");
@@ -258,6 +300,9 @@ mod tests {
     #[test]
     fn xlsx_renders_real_bytes() {
         let bytes = write_xlsx(&["a", "b"], &[vec!["1".to_string(), "text".to_string()]]).unwrap();
-        assert!(bytes.starts_with(b"PK"), "an xlsx is a zip archive, starts with the PK signature");
+        assert!(
+            bytes.starts_with(b"PK"),
+            "an xlsx is a zip archive, starts with the PK signature"
+        );
     }
 }

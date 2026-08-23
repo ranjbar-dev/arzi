@@ -17,9 +17,9 @@
 //! `user_preferences` table rather than a bespoke column.
 
 use crate::{
-    audit, db,
+    audit,
     auth::{authz::RequireSuperuser, AuthUser},
-    period_close, AppState,
+    db, period_close, AppState,
 };
 use axum::{
     extract::{Path, State},
@@ -36,7 +36,10 @@ const CURRENT_FISCAL_YEAR_PREF: (&str, &str) = ("ui", "current_fiscal_year_id");
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_fiscal_years).post(create_fiscal_year))
-        .route("/current", get(get_current_fiscal_year).put(set_current_fiscal_year))
+        .route(
+            "/current",
+            get(get_current_fiscal_year).put(set_current_fiscal_year),
+        )
         .route("/{id}/close", post(close_fiscal_year))
         // step 2.7 (NewFinalu / EnteghalU equivalents) — kept here rather than a separate
         // top-level mount since both take a fiscal-year id as their subject.
@@ -81,13 +84,15 @@ async fn list_fiscal_years(
 
     Ok(Json(
         rows.into_iter()
-            .map(|(id, year, start_date, end_date, is_active)| FiscalYearRow {
-                id,
-                year,
-                start_date,
-                end_date,
-                is_active,
-            })
+            .map(
+                |(id, year, start_date, end_date, is_active)| FiscalYearRow {
+                    id,
+                    year,
+                    start_date,
+                    end_date,
+                    is_active,
+                },
+            )
             .collect(),
     ))
 }
@@ -181,11 +186,12 @@ async fn close_fiscal_year(
         .await
         .map_err(|_| internal_error())?;
 
-    let was_active: Option<bool> = sqlx::query_scalar("SELECT is_active FROM fiscal_years WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
+    let was_active: Option<bool> =
+        sqlx::query_scalar("SELECT is_active FROM fiscal_years WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|_| internal_error())?;
     let Some(was_active) = was_active else {
         return Err((
             StatusCode::NOT_FOUND,
@@ -288,14 +294,13 @@ async fn set_current_fiscal_year(
         .await
         .map_err(|_| internal_error())?;
 
-    let exists: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM fiscal_years WHERE id = $1 AND tenant_id = $2",
-    )
-    .bind(req.fiscal_year_id)
-    .bind(auth.tenant_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|_| internal_error())?;
+    let exists: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM fiscal_years WHERE id = $1 AND tenant_id = $2")
+            .bind(req.fiscal_year_id)
+            .bind(auth.tenant_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|_| internal_error())?;
     if exists.is_none() {
         return Err((
             StatusCode::NOT_FOUND,

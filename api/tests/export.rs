@@ -20,10 +20,11 @@ struct Fixture {
 }
 
 async fn seed(pool: &PgPool) -> Fixture {
-    let tenant_id: i64 = sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let tenant_id: i64 =
+        sqlx::query_scalar("INSERT INTO tenants (slug, name) VALUES ('acme', 'Acme') RETURNING id")
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let user_id: i64 = sqlx::query_scalar(
         "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
          VALUES ($1, 'root', 'x', true) RETURNING id",
@@ -51,11 +52,13 @@ async fn seed(pool: &PgPool) -> Fixture {
     .fetch_one(pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO accounts (tenant_id, general_ledger_code, name) VALUES ($1, 10, 'Assets')")
-        .bind(tenant_id)
-        .execute(pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO accounts (tenant_id, general_ledger_code, name) VALUES ($1, 10, 'Assets')",
+    )
+    .bind(tenant_id)
+    .execute(pool)
+    .await
+    .unwrap();
     let cash_account_id: i64 = sqlx::query_scalar(
         "INSERT INTO accounts (tenant_id, general_ledger_code, subsidiary_code, name) \
          VALUES ($1, 10, 1, 'Cash') RETURNING id",
@@ -64,11 +67,13 @@ async fn seed(pool: &PgPool) -> Fixture {
     .fetch_one(pool)
     .await
     .unwrap();
-    sqlx::query("INSERT INTO accounts (tenant_id, general_ledger_code, name) VALUES ($1, 40, 'Revenue')")
-        .bind(tenant_id)
-        .execute(pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO accounts (tenant_id, general_ledger_code, name) VALUES ($1, 40, 'Revenue')",
+    )
+    .bind(tenant_id)
+    .execute(pool)
+    .await
+    .unwrap();
     let sales_account_id: i64 = sqlx::query_scalar(
         "INSERT INTO accounts (tenant_id, general_ledger_code, subsidiary_code, name) \
          VALUES ($1, 40, 1, 'Sales') RETURNING id",
@@ -77,7 +82,12 @@ async fn seed(pool: &PgPool) -> Fixture {
     .fetch_one(pool)
     .await
     .unwrap();
-    Fixture { fiscal_year_id, token, cash_account_id, sales_account_id }
+    Fixture {
+        fiscal_year_id,
+        token,
+        cash_account_id,
+        sales_account_id,
+    }
 }
 
 fn cookie(token: &str) -> String {
@@ -85,13 +95,23 @@ fn cookie(token: &str) -> String {
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
 /// Creates a voucher on `date` with a debit/credit pair for `amount`, with
 /// `description` as the line narration, optionally posted.
-async fn make_voucher(router: &axum::Router, token: &str, fx: &Fixture, date: &str, amount: i64, description: &str, post: bool) {
+async fn make_voucher(
+    router: &axum::Router,
+    token: &str,
+    fx: &Fixture,
+    date: &str,
+    amount: i64,
+    description: &str,
+    post: bool,
+) {
     let create = router
         .clone()
         .oneshot(
@@ -123,8 +143,18 @@ async fn make_voucher(router: &axum::Router, token: &str, fx: &Fixture, date: &s
                 .unwrap()
         }
     };
-    assert_eq!(add_line(fx.cash_account_id, amount, 0, description).await.status(), StatusCode::CREATED);
-    assert_eq!(add_line(fx.sales_account_id, 0, amount, "contra").await.status(), StatusCode::CREATED);
+    assert_eq!(
+        add_line(fx.cash_account_id, amount, 0, description)
+            .await
+            .status(),
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        add_line(fx.sales_account_id, 0, amount, "contra")
+            .await
+            .status(),
+        StatusCode::CREATED
+    );
 
     if post {
         let transition = |to: &'static str| {
@@ -143,7 +173,10 @@ async fn make_voucher(router: &axum::Router, token: &str, fx: &Fixture, date: &s
                     .unwrap()
             }
         };
-        assert_eq!(transition("confirmed").await.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            transition("confirmed").await.status(),
+            StatusCode::NO_CONTENT
+        );
         assert_eq!(transition("posted").await.status(), StatusCode::NO_CONTENT);
     }
 }
@@ -152,13 +185,33 @@ async fn make_voucher(router: &axum::Router, token: &str, fx: &Fixture, date: &s
 /// number column is correctly headed, and a comma/whitespace-laden
 /// narration survives a real CSV round trip intact.
 #[sqlx::test(migrations = "./migrations")]
-async fn tax_export_excludes_drafts_and_labels_and_quotes_correctly(pool: PgPool) -> sqlx::Result<()> {
+async fn tax_export_excludes_drafts_and_labels_and_quotes_correctly(
+    pool: PgPool,
+) -> sqlx::Result<()> {
     let fx = seed(&pool).await;
     let router = app(AppState { pool: pool.clone() });
 
-    make_voucher(&router, &fx.token, &fx, "2027-04-01", 1_000_000, "فروش، شامل   چند   فاصله", true).await;
+    make_voucher(
+        &router,
+        &fx.token,
+        &fx,
+        "2027-04-01",
+        1_000_000,
+        "فروش، شامل   چند   فاصله",
+        true,
+    )
+    .await;
     // Left as a draft -- must be excluded entirely (B17, direct test #1).
-    make_voucher(&router, &fx.token, &fx, "2027-04-05", 9_999_999, "draft only", false).await;
+    make_voucher(
+        &router,
+        &fx.token,
+        &fx,
+        "2027-04-05",
+        9_999_999,
+        "draft only",
+        false,
+    )
+    .await;
 
     let resp = router
         .oneshot(
@@ -173,12 +226,19 @@ async fn tax_export_excludes_drafts_and_labels_and_quotes_correctly(pool: PgPool
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(resp.headers().get(header::CONTENT_TYPE).unwrap(), "text/csv; charset=utf-8");
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(
+        resp.headers().get(header::CONTENT_TYPE).unwrap(),
+        "text/csv; charset=utf-8"
+    );
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let text = String::from_utf8(bytes.to_vec()).unwrap();
 
     // Manual test #2: the voucher-number column is headed correctly, not "ردیف".
-    assert!(text.starts_with("شماره سند,تاریخ,کل,نام کل,معین,نام معین,شرح,مبلغ بدهکار,مبلغ بستانکار"));
+    assert!(
+        text.starts_with("شماره سند,تاریخ,کل,نام کل,معین,نام معین,شرح,مبلغ بدهکار,مبلغ بستانکار")
+    );
 
     // Manual test #1 (B17): the draft's distinctive 9,999,999 never appears.
     assert!(!text.contains("9999999"));
@@ -195,7 +255,10 @@ async fn tax_export_excludes_drafts_and_labels_and_quotes_correctly(pool: PgPool
             found = true;
         }
     }
-    assert!(found, "the posted line's narration must appear intact as one CSV field");
+    assert!(
+        found,
+        "the posted line's narration must appear intact as one CSV field"
+    );
 
     Ok(())
 }
@@ -224,7 +287,9 @@ async fn tax_export_xlsx_is_a_real_clean_workbook(pool: PgPool) -> sqlx::Result<
         resp.headers().get(header::CONTENT_TYPE).unwrap(),
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     assert!(bytes.starts_with(b"PK"), "a real xlsx (zip archive)");
 
     Ok(())

@@ -27,7 +27,12 @@
 //! are people) but inconsistent with this codebase's own petty-cash fix and
 //! with the fact a payee can be a company; composed as "N payee(s)" instead.
 
-use crate::{audit, auto_post::{self, GeneratedLine, PostingError}, db, auth::AuthUser, AppState};
+use crate::{
+    audit,
+    auth::AuthUser,
+    auto_post::{self, GeneratedLine, PostingError},
+    db, AppState,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -42,14 +47,23 @@ use sqlx::{Postgres, Transaction};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_batches).post(create_batch))
-        .route("/{id}", get(get_batch).put(update_batch).delete(delete_batch))
+        .route(
+            "/{id}",
+            get(get_batch).put(update_batch).delete(delete_batch),
+        )
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": "internal_error" })))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "error": "internal_error" })),
+    )
 }
 fn not_found(what: &str) -> (StatusCode, Json<Value>) {
-    (StatusCode::NOT_FOUND, Json(json!({ "error": format!("{what}_not_found") })))
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": format!("{what}_not_found") })),
+    )
 }
 fn bad_request(error: &str) -> (StatusCode, Json<Value>) {
     (StatusCode::BAD_REQUEST, Json(json!({ "error": error })))
@@ -78,11 +92,13 @@ async fn fetch_batch(
     tenant_id: i64,
     id: i64,
 ) -> Result<Option<BatchRecord>, sqlx::Error> {
-    sqlx::query_as(&format!("SELECT {BATCH_COLUMNS} FROM cheque_payment_batches WHERE tenant_id = $1 AND id = $2"))
-        .bind(tenant_id)
-        .bind(id)
-        .fetch_optional(&mut **tx)
-        .await
+    sqlx::query_as(&format!(
+        "SELECT {BATCH_COLUMNS} FROM cheque_payment_batches WHERE tenant_id = $1 AND id = $2"
+    ))
+    .bind(tenant_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
 }
 
 #[derive(sqlx::FromRow, Serialize, Clone)]
@@ -163,7 +179,9 @@ fn posting_error_response(err: PostingError) -> (StatusCode, Json<Value>) {
         PostingError::FiscalYearNotFound => not_found("fiscal_year"),
         PostingError::FiscalYearClosed => bad_request("fiscal_year_closed"),
         PostingError::EmptyLines => bad_request("at_least_one_line_required"),
-        PostingError::Unbalanced | PostingError::InvalidLineAmount(_) | PostingError::Database(_) => internal_error(),
+        PostingError::Unbalanced
+        | PostingError::InvalidLineAmount(_)
+        | PostingError::Database(_) => internal_error(),
     }
 }
 
@@ -221,13 +239,31 @@ async fn post_batch_voucher(
             account_id: l.payee_account_id,
             debit: l.amount,
             credit: 0,
-            description: l.description.clone().unwrap_or_else(|| narration.to_string()),
+            description: l
+                .description
+                .clone()
+                .unwrap_or_else(|| narration.to_string()),
         })
         .collect();
-    generated.push(GeneratedLine { account_id: bank_account_id, debit: 0, credit: total, description: narration.to_string() });
-    auto_post::post_generated_voucher(tx, tenant_id, fiscal_year_id, issue_date, narration, 26, batch_id, &generated, actor_id)
-        .await
-        .map_err(posting_error_response)
+    generated.push(GeneratedLine {
+        account_id: bank_account_id,
+        debit: 0,
+        credit: total,
+        description: narration.to_string(),
+    });
+    auto_post::post_generated_voucher(
+        tx,
+        tenant_id,
+        fiscal_year_id,
+        issue_date,
+        narration,
+        26,
+        batch_id,
+        &generated,
+        actor_id,
+    )
+    .await
+    .map_err(posting_error_response)
 }
 
 fn compose_narration(description: &str, line_count: usize) -> String {
@@ -246,7 +282,9 @@ async fn create_batch(
     }
     validate_lines(&req.lines).map_err(bad_request)?;
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id, req.issue_date).await?;
     require_leaf_account(&mut tx, auth.tenant_id, req.bank_account_id).await?;
     for line in &req.lines {
@@ -346,8 +384,13 @@ async fn update_batch(
     }
     validate_lines(&req.lines).map_err(bad_request)?;
 
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(existing) = fetch_batch(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(existing) = fetch_batch(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("cheque_payment_batch"));
     };
     fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id, req.issue_date).await?;
@@ -463,7 +506,9 @@ async fn list_batches(
     auth: AuthUser,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<BatchRecord>>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
     let rows: Vec<BatchRecord> = if let Some(fy) = params.fiscal_year_id {
         sqlx::query_as(&format!(
             "SELECT {BATCH_COLUMNS} FROM cheque_payment_batches WHERE tenant_id = $1 AND fiscal_year_id = $2 ORDER BY issue_date"
@@ -497,11 +542,18 @@ async fn get_batch(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<BatchDetail>, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(batch) = fetch_batch(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(batch) = fetch_batch(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("cheque_payment_batch"));
     };
-    let lines = fetch_lines(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())?;
+    let lines = fetch_lines(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
     Ok(Json(BatchDetail { batch, lines }))
 }
@@ -515,17 +567,24 @@ async fn delete_batch(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
-    let mut tx = db::begin(&state.pool, auth.tenant_id).await.map_err(|_| internal_error())?;
-    let Some(batch) = fetch_batch(&mut tx, auth.tenant_id, id).await.map_err(|_| internal_error())? else {
+    let mut tx = db::begin(&state.pool, auth.tenant_id)
+        .await
+        .map_err(|_| internal_error())?;
+    let Some(batch) = fetch_batch(&mut tx, auth.tenant_id, id)
+        .await
+        .map_err(|_| internal_error())?
+    else {
         return Err(not_found("cheque_payment_batch"));
     };
     if let Some(voucher_id) = batch.voucher_id {
-        let status: Option<String> = sqlx::query_scalar("SELECT status::text FROM vouchers WHERE tenant_id = $1 AND id = $2")
-            .bind(auth.tenant_id)
-            .bind(voucher_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|_| internal_error())?;
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status::text FROM vouchers WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(auth.tenant_id)
+        .bind(voucher_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|_| internal_error())?;
         if status.as_deref() != Some("draft") {
             return Err(bad_request("voucher_not_draft"));
         }
