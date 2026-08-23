@@ -1,5 +1,7 @@
-import { DomainPlaceholder } from "../placeholder";
+import { getSession } from "@/lib/session";
+import { PartyRegister } from "./party-register";
 
-export default function PartiesPage() {
-  return <DomainPlaceholder titleKey="nav.parties" />;
+export default async function PartiesPage() {
+  const session = await getSession();
+  return <PartyRegister canLock={!!session?.isSuperuser} />;
 }

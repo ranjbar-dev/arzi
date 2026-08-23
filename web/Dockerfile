@@ -19,9 +19,13 @@ RUN npm run build
 FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# Step 7.4: `output: "standalone"` (next.config.ts) traces the actually-used dependency subset into
+# `.next/standalone` — this replaces copying the whole `node_modules` (devDependencies included)
+# into the runtime image. `.next/standalone` already contains its own minimal `node_modules` and a
+# `server.js` entrypoint; `.next/static` and `public` are NOT included in `standalone` and must be
+# copied alongside it (Next.js's own documented pattern).
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["node", "server.js"]

@@ -1,5 +1,5 @@
-import { DomainPlaceholder } from "../placeholder";
+import { redirect } from "next/navigation";
 
 export default function InventoryPage() {
-  return <DomainPlaceholder titleKey="nav.inventory" />;
+  redirect("/inventory/warehouses");
 }

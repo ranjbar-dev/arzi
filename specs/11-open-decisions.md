@@ -284,33 +284,33 @@ simply wrong. A fresh dump against the current production schema, or a direct re
 
 → `02-data-model/02-11-c-ddl-parties-and-accounts.md`
 
-### A17. An undocumented trigger silently audits `Anbar_Jens` changes — should the rebuild replicate this? ⛔ NEW, needs a ruling (not blocked on data — behaviour is fully known)
+### A17. An undocumented trigger silently audits `Anbar_Jens` changes — should the rebuild replicate this? — DECIDED (2026-08-23)
+
+**Ruling: drop.** Consistent with A12's `S_IS_*` treatment — a write-only trail nothing in the app
+ever reads is dead weight, not a feature to port. Real audit logging (C1) covers future needs if a
+concrete requirement shows up; no bespoke `AnbarJens_B` equivalent is built.
 
 `Jens_Update` (`AFTER DELETE, UPDATE` on `Anbar_Jens`) copies the pre-change row into `AnbarJens_B`
 on every edit or delete of an inventory item — a server-side change-history mechanism that exists
 today, silently, and that **no `02-*` or `05-inventory.md` document currently mentions.**
 `AnbarJens_B` is confirmed never read by the Delphi application anywhere (grepped) — it is a
 write-only audit trail nobody in the app consumes, though an operator could query it directly in
-SSMS. This is not blocked on further data — the trigger's full body is captured and its behaviour
-is completely known. What needs a ruling: **does the rebuild need an equivalent item-change-history
-table**, given one has apparently been silently relied upon (or at least silently produced) in
-production, or is this dead weight safe to drop like the `S_IS_*` columns (A12)?
+SSMS.
 
 → `02-data-model/02-12-a.md §12.7`
 
 ---
 
-## Group B — Confirmed defects: replicate, or fix? — DECIDED: fix all 24, B25 NEW (needs the same sign-off)
+## Group B — Confirmed defects: replicate, or fix? — DECIDED: fix all 25 (B25 signed off 2026-08-23)
 
 **Ruling: fix every defect below, including the ones that change visible behaviour** (B4, B5, B6,
 B11, B12, B14, B15, B17, B19 — ledger opening-balance handling, cheque state codes, report
 permissions, endorsement, pistachio deduction calculator). None are replicated as-is.
 
-**2026-08-19: B25 added**, found by reading `Anbar_ReportKharidForoosh`'s body in
-`Full_Script_14050527.sql` — confirmed via the procedure text itself, not inferred from caller
-code. It almost certainly falls under the same "fix every defect" ruling as B1-B24, but is listed
-separately because it postdates that ruling and deserves the same explicit sign-off the other 24
-got, per this file's own standard.
+**B25 — signed off 2026-08-23: fix, same ruling as B1-B24.** Found by reading
+`Anbar_ReportKharidForoosh`'s body in `Full_Script_14050527.sql` — confirmed via the procedure text
+itself, not inferred from caller code. Add the missing fiscal-year predicate rather than porting
+the cross-year leak.
 
 Where a defect has corrupted historical data (see "Data already affected?" column), fixing the
 code is not sufficient — each of those needs a data-remediation pass, not just a code fix.
@@ -348,8 +348,7 @@ Each of these is live in production code. The specification documents them as-is
 B1, B2, B7, B8, B9, B10, B13 and B18 are data-integrity defects needing a documented
 data-remediation pass alongside the code fix. B3, B16, B20, B21, B22, B23, B24 and B25 are outright
 hazards. B4, B5, B6, B11, B12, B14, B15, B17 and B19 are behaviour changes users will *notice* —
-now approved as part of the "fix all 24" ruling above. **B25 needs its own explicit sign-off** (see
-note above the table) but is written up the same way for when that happens.
+all 25 defects, including B25, are now approved for fixing per the ruling above.
 
 ---
 
@@ -396,14 +395,20 @@ menu entries; behaviour stays equivalent.
 
 ## What's left
 
-All policy decisions are made (2026-08-18): A3–A8, A10, Group B (B1-B24), Group C. See rulings
-inline above.
+**All policy decisions are now made (2026-08-23): A3–A8, A10, A17, Group B (B1-B25), Group C.** See
+rulings inline above. Everything remaining is data, not policy — deferred, does not block the
+roadmap (see below).
 
 **2026-08-19: a schema-only SQL Server dump (`Full_Script_14050527.sql` — DDL, procedure/function/
 trigger bodies, zero data rows) was reviewed against every open question in `02-data-model.md §12`
 and `06-treasury.md §12`.** This closed **A2** (DDL/procedure side) outright, narrowed **A1** and
-**A9** further, and surfaced seven new items (A11-A17) plus one new confirmed defect (B25) that need
-the same sign-off the rest of this file already got.
+**A9** further, and surfaced seven new items (A11-A17) plus one new confirmed defect (B25) — B25 and
+A17 have since been signed off (2026-08-23, above).
+
+**2026-08-23: deferred, not blocking.** A1, A9, A11-A16 all require a live populated-database
+session (sample data, row counts, call-site enumeration) — no policy question resolves them, so
+they're deliberately left open rather than guessed at. Roadmap work proceeds; these get folded in
+once that DB session happens.
 
 Two items remain genuinely blocked on a **populated** database — schema alone cannot resolve them,
 no further Q&A does either:

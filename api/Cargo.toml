@@ -6,15 +6,23 @@ edition = "2021"
 [dependencies]
 axum = "0.8"
 axum-extra = { version = "0.12", features = ["cookie"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "time", "fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate", "chrono"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate", "chrono", "bigdecimal"] }
 chrono = { version = "0.4", features = ["serde"] }
 argon2 = "0.5"
 time = "0.3"
+bigdecimal = { version = "0.4", features = ["serde"] }
+typst-as-lib = "0.16"
+typst = "0.15"
+typst-pdf = "0.15"
+derive_typst_intoval = "0.8"
+thiserror = "2"
+csv = "1"
+rust_xlsxwriter = "0.98"
 
 [dev-dependencies]
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate", "chrono", "macros"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "migrate", "chrono", "bigdecimal", "macros"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

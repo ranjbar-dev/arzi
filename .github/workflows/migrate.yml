@@ -1,0 +1,38 @@
+name: Database migrations
+
+# docs/production-deploy.md's "Migrations" section: prod runs with RUN_MIGRATIONS_ON_BOOT=0 (an
+# explicit, auditable step, never silently alongside real traffic) — this workflow IS that step.
+# Manual trigger by design: a schema migration against a production database is exactly the kind
+# of action that should require a deliberate click, not fire automatically on every push.
+#
+# Requires one repository secret: PROD_DATABASE_URL — a connection string for the OWNER role (the
+# same role api/main.rs's own DATABASE_URL uses to run migrations, never the RLS-bound APP_DATABASE_URL
+# role, which cannot create/alter tables by design — see api/migrations/0002_platform_schema.sql's
+# non-BYPASSRLS app-role setup). Configure it once your production database host is chosen; this
+# workflow does not choose one on your behalf.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache sqlx-cli
+        id: cache-sqlx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/sqlx
+          key: sqlx-cli-${{ runner.os }}-0.8
+
+      - name: Install sqlx-cli
+        if: steps.cache-sqlx.outputs.cache-hit != 'true'
+        run: cargo install sqlx-cli --version ^0.8 --no-default-features --features postgres,rustls
+
+      - name: Run pending migrations
+        working-directory: api
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: sqlx migrate run

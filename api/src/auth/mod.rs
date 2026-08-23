@@ -388,6 +388,7 @@ pub struct AuthUser {
     pub user_id: i64,
     pub tenant_id: i64,
     pub is_superuser: bool,
+    pub is_platform_admin: bool,
     pub permissions: HashSet<String>,
 }
 
@@ -419,15 +420,17 @@ where
             return Err(StatusCode::UNAUTHORIZED);
         }
 
-        let (is_superuser, permissions) = load_authz(&state.pool, tenant_id, user_id)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let (is_superuser, is_platform_admin, permissions) =
+            load_authz(&state.pool, tenant_id, user_id)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         Ok(AuthUser {
             session_id: token,
             user_id,
             tenant_id,
             is_superuser,
+            is_platform_admin,
             permissions,
         })
     }
@@ -440,13 +443,14 @@ async fn load_authz(
     pool: &PgPool,
     tenant_id: i64,
     user_id: i64,
-) -> Result<(bool, HashSet<String>), sqlx::Error> {
+) -> Result<(bool, bool, HashSet<String>), sqlx::Error> {
     let mut tx = db::begin(pool, tenant_id).await?;
 
-    let is_superuser: bool = sqlx::query_scalar("SELECT is_superuser FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_one(&mut *tx)
-        .await?;
+    let (is_superuser, is_platform_admin): (bool, bool) =
+        sqlx::query_as("SELECT is_superuser, is_platform_admin FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&mut *tx)
+            .await?;
 
     let codes: Vec<String> = sqlx::query_scalar(
         "SELECT p.code FROM user_permissions up \
@@ -459,5 +463,5 @@ async fn load_authz(
 
     tx.rollback().await?; // read-only lookup
 
-    Ok((is_superuser, codes.into_iter().collect()))
+    Ok((is_superuser, is_platform_admin, codes.into_iter().collect()))
 }

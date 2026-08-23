@@ -11,7 +11,9 @@ use crate::AppState;
 use axum::{
     extract::{FromRef, FromRequestParts},
     http::{request::Parts, StatusCode},
+    Json,
 };
+use serde_json::{json, Value};
 use std::marker::PhantomData;
 
 impl AuthUser {
@@ -53,6 +55,24 @@ where
     }
 }
 
+/// Step 6.7's runtime-check twin of `RequirePermission<P>` — for the
+/// reporting routes (6.1-6.6), where the correct id sometimes depends on
+/// the request itself (e.g. `ledgers.rs`'s merged Kol+Moein endpoint needs
+/// EITHER of two legacy ids, which the type-level extractor can't express;
+/// same reasoning `vouchers.rs` already used for its own runtime checks
+/// since 2.8) — a JSON error body, not the extractor's bare `StatusCode`.
+pub fn require(auth: &AuthUser, code: &str) -> Result<(), (StatusCode, Json<Value>)> {
+    require_any(auth, &[code])
+}
+
+pub fn require_any(auth: &AuthUser, codes: &[&str]) -> Result<(), (StatusCode, Json<Value>)> {
+    if codes.iter().any(|c| auth.has_permission(c)) {
+        Ok(())
+    } else {
+        Err((StatusCode::FORBIDDEN, Json(json!({ "error": "insufficient_permission" }))))
+    }
+}
+
 /// Extractor for the legacy's "Supervisor-only (no Pass_Config id)" bucket
 /// (08-04.md §4.4 closing table) — actions with no catalogue permission at
 /// all, never delegable through the matrix. User/permission administration
@@ -72,5 +92,29 @@ where
             return Err(StatusCode::FORBIDDEN);
         }
         Ok(RequireSuperuser(auth))
+    }
+}
+
+/// Step 7.3's own gate — deliberately NOT implied by `RequireSuperuser`. A tenant's superuser is
+/// scoped to that tenant only (08-04.md §4.1); backups cover the whole shared Postgres instance
+/// (every tenant's data, per A3's shared-database tenancy), so reusing `is_superuser` here would
+/// let any tenant's admin trigger and download a dump containing every OTHER tenant's data too —
+/// an explicit user decision (2026-08-23) to add a genuinely separate, tenant-independent role
+/// flag instead of overloading the existing one.
+pub struct RequirePlatformAdmin(pub AuthUser);
+
+impl<S> FromRequestParts<S> for RequirePlatformAdmin
+where
+    AppState: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let auth = AuthUser::from_request_parts(parts, state).await?;
+        if !auth.is_platform_admin {
+            return Err(StatusCode::FORBIDDEN);
+        }
+        Ok(RequirePlatformAdmin(auth))
     }
 }

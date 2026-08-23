@@ -34,6 +34,16 @@ async fn main() {
         .await
         .expect("failed to connect to database as app role");
 
+    // Step 7.3: scheduled backup as a real background task, never tied to a request (the legacy's
+    // defect was running its one auto-backup unconditionally inside every login). Default 24h;
+    // override for local testing. `spawn_scheduled_backups` skips its first (immediate) tick, so
+    // this never dumps at boot.
+    let backup_interval_secs: u64 = std::env::var("BACKUP_INTERVAL_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(86400);
+    api::backup::spawn_scheduled_backups(pool.clone(), backup_interval_secs);
+
     let router = app(AppState { pool });
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));

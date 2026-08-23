@@ -1,8 +1,32 @@
 pub mod accounts;
 pub mod audit;
+pub mod auto_post;
 pub mod auth;
+pub mod backup;
 pub mod db;
+pub mod deposit_slips;
+pub mod export;
 pub mod fiscal_years;
+pub mod inventory_documents;
+pub mod inventory_posting;
+pub mod inventory_reports;
+pub mod issued_cheques;
+pub mod items;
+pub mod ledgers;
+pub mod money;
+pub mod parties;
+pub mod party_balance;
+pub mod pdf;
+pub mod persian_words;
+pub mod pistachio;
+pub mod period_close;
+pub mod petty_cash;
+pub mod received_cheques;
+pub mod settlement;
+pub mod shareholdings;
+pub mod stock;
+pub mod trial_balance;
+pub mod vouchers;
 
 use axum::{extract::State, routing::get, Json, Router};
 use serde_json::{json, Value};
@@ -63,6 +87,7 @@ async fn me(
         "username": username,
         "tenantName": tenant_name,
         "isSuperuser": auth.is_superuser,
+        "isPlatformAdmin": auth.is_platform_admin,
         "permissions": auth.permissions,
         "currentFiscalYearId": current_fiscal_year,
         "currentFiscalYear": current_fiscal_year_label,
@@ -76,6 +101,27 @@ pub fn app(state: AppState) -> Router {
         .nest("/api/v1/auth", auth::router())
         .nest("/api/v1/admin", auth::admin::router())
         .nest("/api/v1/fiscal-years", fiscal_years::router())
+        .nest("/api/v1/platform", backup::router())
         .nest("/api/v1/accounts", accounts::router())
+        .nest("/api/v1/parties", parties::router())
+        .nest("/api/v1/shareholdings", shareholdings::router())
+        .nest("/api/v1/vouchers", vouchers::router())
+        .nest("/api/v1/received-cheques", received_cheques::router())
+        .nest("/api/v1/deposit-slips", deposit_slips::router())
+        .nest("/api/v1/petty-cash-claims", petty_cash::router())
+        .nest("/api/v1/cheque-payment-batches", issued_cheques::router())
+        .nest("/api/v1/warehouses", items::warehouses_router())
+        .nest("/api/v1/units-of-measure", items::units_of_measure_router())
+        .nest("/api/v1/pistachio-grades", items::pistachio_grades_router())
+        .nest("/api/v1/items", items::items_router())
+        .nest("/api/v1/inventory-documents", inventory_documents::router())
+        .nest("/api/v1/pistachio-deduction", pistachio::router())
+        .nest(
+            "/api/v1/reports",
+            trial_balance::router()
+                .merge(ledgers::router())
+                .merge(inventory_reports::router())
+                .merge(export::router()),
+        )
         .with_state(state)
 }

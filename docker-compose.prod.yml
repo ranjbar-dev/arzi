@@ -1,0 +1,87 @@
+# Step 7.4 (docs/phase-7-hardening-and-cutover.md §7.4 / specs/10-target-architecture.md §5):
+# production override. `docker-compose.yml` alone is the local-dev shape (published db port for
+# `psql` access, migrations run automatically on boot, cookies over plain HTTP); this file changes
+# only what's genuinely environment-specific, per the Build bullet's own "one docker-compose.yml
+# for local dev, an override for prod, not a templating layer."
+#
+# Usage:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Everything below is still sourced from environment variables (.env / your secrets manager of
+# choice) — nothing here or in the Dockerfiles hard-codes a credential or connection string
+# (confirmed by this step's own audit: `grep -rniE "password *= *['\"]" api/Dockerfile web/Dockerfile
+# docker-compose*.yml` matches nothing but the env-var NAMES, never a literal value — the only
+# literal secret-shaped strings anywhere are `.env`'s own `change_me`/`change_me_too` placeholders,
+# and `.env` is gitignored).
+
+services:
+  db:
+    # No published host port in prod — only `api`, on the same compose network, ever needs to
+    # reach Postgres directly. Local dev's `docker-compose.yml` still publishes it (needed for
+    # `psql`/`cargo test` against `localhost`, both dev-only workflows).
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 512m
+
+  api:
+    environment:
+      # Prod runs migrations as an explicit, auditable step (`sqlx migrate run`, or the deploy
+      # pipeline's own migration stage) — never silently on container boot alongside real traffic.
+      # main.rs's own comment already names this as the intended prod path; this is where it's
+      # actually switched on.
+      RUN_MIGRATIONS_ON_BOOT: "0"
+      # TLS is terminated in front of this stack (load balancer / reverse proxy — see the `web`
+      # note below); the session cookie's `Secure` flag can turn on for real once that's true.
+      SESSION_COOKIE_SECURE: "true"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
+      replicas: 1 # bump once the process is verified stateless across restarts (it is: sessions
+                  # and every other durable fact already live in Postgres, never in-process — the
+                  # one exception, 1.2's per-process login rate limiter, is explicitly documented
+                  # `ponytail: single-process only` and would need a shared store first)
+
+  web:
+    environment:
+      SESSION_COOKIE_SECURE: "true"
+    # No published host port in prod — `caddy` is the single public ingress (below); `web` is
+    # reachable only over the compose network, same reasoning as `db`'s own unpublished port.
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
+
+  # TLS termination: a real container after all (2026-08-23 follow-up decision — supersedes the
+  # "deliberately not a container" stance this file originally took, which left it to whatever
+  # deploy target got chosen). Caddy fronts `web` on 80/443 with automatic HTTPS (`Caddyfile` at
+  # the repo root — its own header comment explains why the same file works unmodified for both
+  # local prod-shape testing and a real public domain). `web` already runs as a real Next.js Node
+  # server (1.6), and `web`'s own rewrite already proxies `/api/v1/*` to `api` server-to-server —
+  # so fronting `web` alone is sufficient; the browser never needs a direct route to `api` or `db`.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  caddy_data:
+  caddy_config:

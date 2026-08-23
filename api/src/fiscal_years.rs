@@ -19,7 +19,7 @@
 use crate::{
     audit, db,
     auth::{authz::RequireSuperuser, AuthUser},
-    AppState,
+    period_close, AppState,
 };
 use axum::{
     extract::{Path, State},
@@ -38,6 +38,10 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list_fiscal_years).post(create_fiscal_year))
         .route("/current", get(get_current_fiscal_year).put(set_current_fiscal_year))
         .route("/{id}/close", post(close_fiscal_year))
+        // step 2.7 (NewFinalu / EnteghalU equivalents) — kept here rather than a separate
+        // top-level mount since both take a fiscal-year id as their subject.
+        .route("/{id}/close-books", post(period_close::close_books))
+        .route("/{id}/carry-forward", post(period_close::carry_forward))
 }
 
 #[derive(Serialize)]

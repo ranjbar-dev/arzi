@@ -1,5 +1,5 @@
-import { DomainPlaceholder } from "../placeholder";
+import { redirect } from "next/navigation";
 
 export default function TreasuryPage() {
-  return <DomainPlaceholder titleKey="nav.treasury" />;
+  redirect("/treasury/received-cheques");
 }

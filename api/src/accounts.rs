@@ -10,17 +10,50 @@
 //! derives `level` instead). Every "find the parent/children" query below is
 //! therefore a segment-prefix match, not a join on a foreign key.
 //!
-//! Permission gating deliberately absent from every route except lock/unlock
-//! (which has no catalogue permission id, same "Supervisor-only" bucket as
-//! 1.3's admin routes) — wiring the seeded 1100-1104 ids onto these routes is
-//! step 2.8's job, per 1.3's own note that permission wiring happens
-//! per-phase.
+//! Step 2.8 (docs/phase-2-accounting-core.md §2.8): every route below is now
+//! gated by its catalogue permission id (03-13-permissions.md §13.2's
+//! `sRollOutPanel1` group) via the static `RequirePermission<P>` extractor —
+//! lock/unlock stay `RequireSuperuser` (no catalogue id, same bucket as
+//! 1.3's admin routes). Resolves the legacy's 1102/1103 dead-code collision
+//! (§13.2's note: `SNewu` enforced none of create/amend/delete at all, and
+//! the one place that tried, `ListSarfaslu`, buggily assigned all three
+//! results to the same control so only delete had any effect) — create,
+//! amend (rename/recode/promote/demote), and delete are independently real
+//! and independently enforced here. `promote`/`demote` have no catalogue id
+//! of their own (no legacy precedent, see their own doc comment below) —
+//! mapped to `amend_account` (1103) as the closest fit, a restructuring
+//! action on an existing node.
 
 use crate::{
     audit, db,
-    auth::{authz::RequireSuperuser, AuthUser},
+    auth::{
+        authz::{Perm, RequirePermission, RequireSuperuser},
+        AuthUser,
+    },
     AppState,
 };
+
+/// Marker types for `RequirePermission<P>` — one per accounting-core chart-
+/// of-accounts action, 03-13-permissions.md §13.2's `sRollOutPanel1` ids.
+mod permcodes {
+    use super::Perm;
+    pub struct AccountList;
+    impl Perm for AccountList {
+        const CODE: &'static str = "account_list"; // 1101
+    }
+    pub struct CreateAccount;
+    impl Perm for CreateAccount {
+        const CODE: &'static str = "create_account"; // 1102
+    }
+    pub struct AmendAccount;
+    impl Perm for AmendAccount {
+        const CODE: &'static str = "amend_account"; // 1103
+    }
+    pub struct DeleteAccount;
+    impl Perm for DeleteAccount {
+        const CODE: &'static str = "delete_account"; // 1104
+    }
+}
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -183,9 +216,10 @@ struct ListQuery {
 /// `parent` => the top-level Kol nodes.
 async fn list_accounts(
     State(state): State<AppState>,
-    auth: AuthUser,
+    guard: RequirePermission<permcodes::AccountList>,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<AccountRecord>>, (StatusCode, Json<Value>)> {
+    let auth = guard.0;
     let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
@@ -329,9 +363,10 @@ async fn code_widths(tx: &mut Transaction<'_, Postgres>, tenant_id: i64) -> Resu
 
 async fn get_account(
     State(state): State<AppState>,
-    auth: AuthUser,
+    guard: RequirePermission<permcodes::AccountList>,
     Path(id): Path<i64>,
 ) -> Result<Json<AccountDetail>, (StatusCode, Json<Value>)> {
+    let auth = guard.0;
     let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
@@ -369,9 +404,10 @@ struct CreateAccountRequest {
 
 async fn create_account(
     State(state): State<AppState>,
-    auth: AuthUser,
+    guard: RequirePermission<permcodes::CreateAccount>,
     Json(req): Json<CreateAccountRequest>,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
+    let auth = guard.0;
     if req.code <= 0 {
         return Err(bad_request("invalid_code"));
     }
@@ -453,10 +489,11 @@ struct RenameRequest {
 /// any node, even one with postings.
 async fn rename_account(
     State(state): State<AppState>,
-    auth: AuthUser,
+    guard: RequirePermission<permcodes::AmendAccount>,
     Path(id): Path<i64>,
     Json(req): Json<RenameRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
+    let auth = guard.0;
     if req.name.trim().is_empty() {
         return Err(bad_request("invalid_name"));
     }
@@ -508,10 +545,11 @@ struct RecodeRequest {
 /// gap: "rejected once 2.3 exists; for now, confirm ... non-postable").
 async fn recode_account(
     State(state): State<AppState>,
-    auth: AuthUser,
+    guard: RequirePermission<permcodes::AmendAccount>,
     Path(id): Path<i64>,
     Json(req): Json<RecodeRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
+    let auth = guard.0;
     if req.code <= 0 {
         return Err(bad_request("invalid_code"));
     }
@@ -578,9 +616,10 @@ async fn recode_account(
 
 async fn promote_account(
     State(state): State<AppState>,
-    auth: AuthUser,
+    guard: RequirePermission<permcodes::AmendAccount>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
+    let auth = guard.0;
     let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
@@ -675,10 +714,11 @@ struct DemoteRequest {
 
 async fn demote_account(
     State(state): State<AppState>,
-    auth: AuthUser,
+    guard: RequirePermission<permcodes::AmendAccount>,
     Path(id): Path<i64>,
     Json(req): Json<DemoteRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
+    let auth = guard.0;
     let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
@@ -826,9 +866,10 @@ async fn unlock_account(
 /// never a snapshot recomputed only on delete.
 async fn delete_account(
     State(state): State<AppState>,
-    auth: AuthUser,
+    guard: RequirePermission<permcodes::DeleteAccount>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<Value>)> {
+    let auth = guard.0;
     let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
