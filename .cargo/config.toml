@@ -1,0 +1,6 @@
+# mold only kicks in for this target triple (Linux CI runners) — Windows local dev is unaffected.
+# `api/tests/*.rs` compiles to ~30 separate integration-test binaries, each linking the full
+# dependency graph (typst-pdf etc. pull in ~150 crates); mold cuts that link time by roughly 5-10x
+# over the default `ld`/`lld`.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]

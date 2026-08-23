@@ -13,7 +13,7 @@ on:
     branches: [main]
 
 jobs:
-  test-api:
+  lint-api:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +25,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: api
+          shared-key: lint
+
+      - run: sudo apt-get update && sudo apt-get install -y mold
 
       - name: Start db
         run: |
@@ -59,6 +62,43 @@ jobs:
           DATABASE_URL: postgres://arzi:change_me@localhost:5432/arzi
         run: cargo clippy --all-targets -- -D warnings
 
+  test-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: api
+          shared-key: test
+
+      - run: sudo apt-get update && sudo apt-get install -y mold
+
+      - name: Start db
+        run: |
+          cp .env.example .env
+          docker compose up -d db
+          timeout 60 sh -c 'until docker compose exec -T db pg_isready -U arzi -d arzi; do sleep 1; done'
+
+      - name: Cache sqlx-cli
+        id: cache-sqlx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/sqlx
+          key: sqlx-cli-${{ runner.os }}-0.8
+
+      - name: Install sqlx-cli
+        if: steps.cache-sqlx.outputs.cache-hit != 'true'
+        run: cargo install sqlx-cli --version ^0.8 --no-default-features --features postgres,rustls
+
+      - name: Run migrations
+        working-directory: api
+        env:
+          DATABASE_URL: postgres://arzi:change_me@localhost:5432/arzi
+        run: sqlx migrate run
+
       - name: test
         working-directory: api
         env:
@@ -88,7 +128,7 @@ jobs:
           API_INTERNAL_URL: http://api:8080
 
   deploy:
-    needs: [test-api, test-web]
+    needs: [lint-api, test-api, test-web]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:

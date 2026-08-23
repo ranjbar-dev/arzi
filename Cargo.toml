@@ -1,3 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["api"]
+
+# Line-table debug info costs real compile+link time across a dep graph this size (typst alone
+# pulls in ~150 crates) for zero CI benefit — nothing here attaches a debugger to a GitHub runner.
+[profile.dev]
+debug = 0
