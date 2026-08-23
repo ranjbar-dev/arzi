@@ -99,9 +99,10 @@ jobs:
       #   DEPLOY_PASSWORD - SSH password
       #   DEPLOY_PATH     - absolute path to this repo's checkout on the server (e.g. /srv/arzi)
       #   DEPLOY_ENV_FILE - full contents of production .env (copy .env.example, fill in every
-      #                      change_me* with a real secret, set SESSION_COOKIE_SECURE=true and
-      #                      SITE_DOMAIN=ranjbar.dev www.ranjbar.dev) — pasted as one multiline
-      #                      secret, written verbatim to .env on the server on every deploy.
+      #                      change_me* with a real secret, set SESSION_COOKIE_SECURE=true) —
+      #                      pasted as one multiline secret, written verbatim to .env on the
+      #                      server on every deploy. TLS/domain routing is host nginx, not .env
+      #                      (deploy/nginx/arzi.conf).
       - name: SSH deploy
         uses: appleboy/ssh-action@v1.0.3
         env:

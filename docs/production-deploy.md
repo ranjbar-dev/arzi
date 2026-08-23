@@ -37,13 +37,16 @@ instead of silently on container start.
 
 ## TLS termination
 
-`caddy` (`docker-compose.prod.yml`) fronts `web` on 80/443 with automatic HTTPS — config in the
-repo-root `Caddyfile`. Set `SITE_DOMAIN` in `.env` to your real public domain for automatic Let's
-Encrypt; left unset, it defaults to `localhost` and Caddy issues a self-signed cert from its own
-internal CA instead (works unmodified for local prod-shape testing — confirmed live, see below).
-`web`/`db` have no published host ports in prod — `caddy` is the only public ingress; `web`'s own
-`next.config.ts` rewrite already proxies `/api/v1/*` to `api` server-to-server, so the browser never
-needs a direct route to either `api` or `db`.
+TLS terminates in **host nginx**, not a container — see `deploy/nginx/arzi.conf` for the site
+config and its own header comment for the install/certbot steps. `docker-compose.prod.yml`
+publishes `web` to `127.0.0.1:${WEB_PORT}` only (not `0.0.0.0`), so nginx on the same host can
+reach it but nothing else can bypass nginx to reach it directly. `db` still has no published host
+port in prod. `web`'s own `next.config.ts` rewrite already proxies `/api/v1/*` to `api`
+server-to-server, so the browser never needs a direct route to either `api` or `db`.
+
+(An earlier version of this stack ran Caddy in a container for automatic HTTPS. Switched to host
+nginx because the target server already runs nginx for other sites — one ingress on the box, not
+two fighting over 80/443.)
 
 ## Manual test procedure (this step's own "Done when")
 
@@ -63,9 +66,6 @@ needs a direct route to either `api` or `db`.
    docker-compose.yml docker-compose.prod.yml` → matches nothing (every credential is an
    environment-variable *reference*, `${VAR}` or `$VAR`, never a literal value baked into a file
    that gets committed).
-5. **TLS live**: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` with real
-   env values → `curl -k https://localhost/` (or your real domain, without `-k`) redirects to
-   `/login`; `curl http://localhost/` gets a 308 to the HTTPS URL (Caddy's automatic HTTP→HTTPS
-   redirect). Confirmed live on this repo's dev host (port 443 was already OS-reserved there, so
-   verified via a temporary alternate port mapping — the Caddyfile and compose service themselves
-   are unchanged and use the real 80/443 in the file as committed).
+5. **TLS live**: with the stack up and nginx configured per `deploy/nginx/arzi.conf` (certbot already
+   run) → `curl https://ranjbar.dev/` redirects to `/login`; `curl http://ranjbar.dev/` gets a
+   redirect to the HTTPS URL (certbot's nginx plugin adds this automatically).
