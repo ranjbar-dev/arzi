@@ -183,7 +183,7 @@ jobs:
             : "${ADMIN_USERNAME:=admin}"
             set -a; . ./.env; set +a
             timeout 120 sh -c 'until docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1 FROM users" >/dev/null 2>&1; do sleep 2; done'
-            ADMIN_HASH=$(docker run --rm alpine sh -c "apk add -q argon2 >/dev/null 2>&1 && printf '%s' \"$ADMIN_PASSWORD\" | argon2 \$(openssl rand -hex 16) -id -e")
+            ADMIN_HASH=$(docker run --rm alpine sh -c "apk add -q argon2 openssl >/dev/null 2>&1 && printf '%s' \"$ADMIN_PASSWORD\" | argon2 \$(openssl rand -hex 16) -id -e")
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
               -v admin_user="$ADMIN_USERNAME" -v admin_hash="$ADMIN_HASH" <<'SQL'
             INSERT INTO tenants (slug, name) VALUES ('default', 'Arzi') ON CONFLICT (slug) DO NOTHING;
