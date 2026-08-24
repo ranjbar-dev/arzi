@@ -139,53 +139,51 @@ export function AdminUsersPanel() {
         </div>
       )}
 
-      <form
-        onSubmit={handleCreateSubmit((values) => createMutation.mutate(values))}
-        className="flex flex-wrap items-end gap-3"
-      >
-        <div className="flex flex-col gap-1">
-          <label htmlFor="username" className="text-sm text-muted-foreground">
-            {t("auth.username")}
-          </label>
-          <input
-            id="username"
-            placeholder="a.rezaei"
-            {...registerCreate("username")}
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={creating}
-          className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-        >
-          {t("admin.createUser")}
-        </button>
-        {(createErrors.username || createErrors.root) && (
-          <p role="alert" className="w-full text-sm text-danger">
-            {createErrors.root?.message ?? t("common.error")}
-          </p>
-        )}
-      </form>
+      <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("admin.createUser")}>
+        <form onSubmit={handleCreateSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">
+          <Field label={t("auth.username")}>
+            <input id="username" placeholder="a.rezaei" {...registerCreate("username")} className={fieldInputClass} autoFocus />
+          </Field>
+          {(createErrors.username || createErrors.root) && (
+            <p role="alert" className="text-sm text-danger">
+              {createErrors.root?.message ?? t("common.error")}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={creating}
+              className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+            >
+              {t("common.save")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("common.cancel")}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
-      {settingPasswordFor !== null && (
-        <SetPasswordDialog
-          userId={settingPasswordFor}
-          onClose={() => setSettingPasswordFor(null)}
-        />
-      )}
+      <SetPasswordDialog
+        open={settingPasswordFor !== null}
+        userId={settingPasswordFor}
+        onClose={() => setSettingPasswordFor(null)}
+      />
 
-      {editingPermissionsFor !== null && (
-        <PermissionsDialog
-          userId={editingPermissionsFor}
-          onClose={() => setEditingPermissionsFor(null)}
-        />
-      )}
+      <PermissionsDialog
+        open={editingPermissionsFor !== null}
+        userId={editingPermissionsFor}
+        onClose={() => setEditingPermissionsFor(null)}
+      />
     </div>
   );
 }
 
-function SetPasswordDialog({ userId, onClose }: { userId: number; onClose: () => void }) {
+function SetPasswordDialog({ open, userId, onClose }: { open: boolean; userId: number | null; onClose: () => void }) {
   const { t } = useTranslation();
   const {
     register,
@@ -205,44 +203,38 @@ function SetPasswordDialog({ userId, onClose }: { userId: number; onClose: () =>
   });
 
   return (
-    <div className="rounded-md border border-border bg-surface p-4">
-      <h2 className="mb-3 text-sm font-medium text-foreground">{t("admin.setPassword")}</h2>
-      <form
-        onSubmit={handleSubmit((values) => mutation.mutate(values))}
-        className="flex flex-wrap items-end gap-3"
-      >
-        <input
-          type="password"
-          autoFocus
-          placeholder="••••••••"
-          {...register("newPassword")}
-          className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        />
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          {t("common.save")}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          {t("common.cancel")}
-        </button>
+    <Modal open={open} onCloseAction={onClose} title={t("admin.setPassword")}>
+      <form onSubmit={handleSubmit((values) => mutation.mutate(values))} className="flex flex-col gap-4">
+        <Field label={t("admin.setPassword")}>
+          <input type="password" autoFocus placeholder="••••••••" {...register("newPassword")} className={fieldInputClass} />
+        </Field>
         {(errors.newPassword || errors.root) && (
-          <p role="alert" className="w-full text-sm text-danger">
+          <p role="alert" className="text-sm text-danger">
             {t("admin.passwordTooShort")}
           </p>
         )}
+        <div className="flex gap-3">
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {t("common.save")}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
       </form>
-    </div>
+    </Modal>
   );
 }
 
-function PermissionsDialog({ userId, onClose }: { userId: number; onClose: () => void }) {
+function PermissionsDialog({ open, userId, onClose }: { open: boolean; userId: number | null; onClose: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
@@ -253,6 +245,7 @@ function PermissionsDialog({ userId, onClose }: { userId: number; onClose: () =>
   const { data: granted } = useQuery({
     queryKey: ["admin", "users", userId, "permissions"],
     queryFn: () => apiRequest<number[]>(`/api/v1/admin/users/${userId}/permissions`),
+    enabled: userId !== null,
   });
 
   const [selected, setSelected] = useState<Set<number> | null>(null);
@@ -271,8 +264,7 @@ function PermissionsDialog({ userId, onClose }: { userId: number; onClose: () =>
   });
 
   return (
-    <div className="rounded-md border border-border bg-surface p-4">
-      <h2 className="mb-3 text-sm font-medium text-foreground">{t("admin.permissions")}</h2>
+    <Modal open={open} onCloseAction={onClose} title={t("admin.permissions")}>
       <div className="grid max-h-64 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto">
         {catalogue?.map((p) => (
           <label key={p.id} className="flex items-center gap-2 text-sm text-foreground">
@@ -310,6 +302,6 @@ function PermissionsDialog({ userId, onClose }: { userId: number; onClose: () =>
           {t("common.cancel")}
         </button>
       </div>
-    </div>
+    </Modal>
   );
 }

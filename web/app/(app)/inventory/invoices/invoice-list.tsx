@@ -17,6 +17,9 @@ import { toPersianDigits } from "@/lib/format";
 import { AccountField } from "@/components/account-field";
 import { DateField } from "@/components/date-field";
 import { Select } from "@/components/select";
+import { Modal } from "@/components/modal";
+import { NewButton } from "@/components/new-button";
+import { Field } from "@/components/form-field";
 import type { InventoryDocument, InventoryDocumentStatus, InventoryDocumentType, Warehouse } from "@/lib/inventory";
 import { COMMERCIAL_TYPES, DOCUMENT_TYPE_LABEL, STATUS_LABEL } from "@/lib/inventory";
 
@@ -50,6 +53,7 @@ export function InvoiceList({ fiscalYearId }: { fiscalYearId: number | null }) {
   const [warehouseId, setWarehouseId] = useState<number | null>(null);
   const [destinationWarehouseId, setDestinationWarehouseId] = useState<number | null>(null);
   const [counterpartyId, setCounterpartyId] = useState<number | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: warehouses } = useQuery({
     queryKey: ["warehouses"],
@@ -96,6 +100,7 @@ export function InvoiceList({ fiscalYearId }: { fiscalYearId: number | null }) {
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["inventory-documents"] });
+      setCreateOpen(false);
       router.push(`/inventory/invoices/${result.id}`);
     },
     onError: (err: ApiError) => setError("root", { message: t(ERROR_KEYS[err.message] ?? "common.error") }),
@@ -107,27 +112,30 @@ export function InvoiceList({ fiscalYearId }: { fiscalYearId: number | null }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("inventory.documentType")}</label>
-          <Select
-            value={typeFilter}
-            onChangeAction={(v) => setTypeFilter(v as InventoryDocumentType | "")}
-            placeholder={t("inventory.allTypes")}
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            options={ALL_TYPES.map((ty) => ({ value: ty, label: t(DOCUMENT_TYPE_LABEL[ty]) }))}
-          />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-sm text-muted-foreground">{t("inventory.documentType")}</label>
+            <Select
+              value={typeFilter}
+              onChangeAction={(v) => setTypeFilter(v as InventoryDocumentType | "")}
+              placeholder={t("inventory.allTypes")}
+              className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              options={ALL_TYPES.map((ty) => ({ value: ty, label: t(DOCUMENT_TYPE_LABEL[ty]) }))}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm text-muted-foreground">{t("treasury.status")}</label>
+            <Select
+              value={statusFilter}
+              onChangeAction={(v) => setStatusFilter(v as InventoryDocumentStatus | "")}
+              placeholder={t("treasury.allStatuses")}
+              className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              options={ALL_STATUSES.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
+            />
+          </div>
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("treasury.status")}</label>
-          <Select
-            value={statusFilter}
-            onChangeAction={(v) => setStatusFilter(v as InventoryDocumentStatus | "")}
-            placeholder={t("treasury.allStatuses")}
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            options={ALL_STATUSES.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
-          />
-        </div>
+        <NewButton onClickAction={() => setCreateOpen(true)}>{t("inventory.newInvoice")}</NewButton>
       </div>
 
       {isLoading ? (
@@ -177,72 +185,78 @@ export function InvoiceList({ fiscalYearId }: { fiscalYearId: number | null }) {
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit((values) => createMutation.mutate(values))}
-        className="flex flex-wrap items-end gap-3 rounded-md border border-border p-3"
-      >
-        <h2 className="w-full text-sm font-semibold text-foreground">{t("inventory.newInvoice")}</h2>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("inventory.documentType")}</label>
-          <Controller
-            name="documentType"
-            control={control}
-            render={({ field }) => (
-              <Select
-                value={field.value ?? ""}
-                onChangeAction={(v) => {
-                  field.onChange(v);
-                  setSelectedType(v as InventoryDocumentType);
-                }}
-                className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                options={ALL_TYPES.map((ty) => ({ value: ty, label: t(DOCUMENT_TYPE_LABEL[ty]) }))}
+      <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("inventory.newInvoice")}>
+        <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label={t("inventory.documentType")}>
+              <Controller
+                name="documentType"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value ?? ""}
+                    onChangeAction={(v) => {
+                      field.onChange(v);
+                      setSelectedType(v as InventoryDocumentType);
+                    }}
+                    className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    options={ALL_TYPES.map((ty) => ({ value: ty, label: t(DOCUMENT_TYPE_LABEL[ty]) }))}
+                  />
+                )}
               />
-            )}
-          />
-        </div>
-        <Controller
-          name="documentDate"
-          control={control}
-          render={({ field }) => (
-            <DateField label={t("inventory.invoiceDate")} value={field.value ?? ""} onChangeAction={field.onChange} />
-          )}
-        />
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("inventory.warehouse")}</label>
-          <Select
-            value={warehouseId ? String(warehouseId) : ""}
-            onChangeAction={(v) => setWarehouseId(v ? Number(v) : null)}
-            placeholder="—"
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            options={(warehouses ?? []).map((w) => ({ value: String(w.id), label: w.name }))}
-          />
-        </div>
-        {isTransfer && (
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("inventory.destinationWarehouse")}</label>
-            <Select
-              value={destinationWarehouseId ? String(destinationWarehouseId) : ""}
-              onChangeAction={(v) => setDestinationWarehouseId(v ? Number(v) : null)}
-              placeholder="—"
-              className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              options={(warehouses ?? []).filter((w) => w.id !== warehouseId).map((w) => ({ value: String(w.id), label: w.name }))}
+            </Field>
+            <Controller
+              name="documentDate"
+              control={control}
+              render={({ field }) => (
+                <DateField label={t("inventory.invoiceDate")} value={field.value ?? ""} onChangeAction={field.onChange} />
+              )}
             />
+            <Field label={t("inventory.warehouse")}>
+              <Select
+                value={warehouseId ? String(warehouseId) : ""}
+                onChangeAction={(v) => setWarehouseId(v ? Number(v) : null)}
+                placeholder="—"
+                className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                options={(warehouses ?? []).map((w) => ({ value: String(w.id), label: w.name }))}
+              />
+            </Field>
+            {isTransfer && (
+              <Field label={t("inventory.destinationWarehouse")}>
+                <Select
+                  value={destinationWarehouseId ? String(destinationWarehouseId) : ""}
+                  onChangeAction={(v) => setDestinationWarehouseId(v ? Number(v) : null)}
+                  placeholder="—"
+                  className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  options={(warehouses ?? []).filter((w) => w.id !== warehouseId).map((w) => ({ value: String(w.id), label: w.name }))}
+                />
+              </Field>
+            )}
+            {isCommercial && <AccountField label={t("inventory.counterparty")} value={counterpartyId} onChangeAction={setCounterpartyId} />}
           </div>
-        )}
-        {isCommercial && <AccountField label={t("inventory.counterparty")} value={counterpartyId} onChangeAction={setCounterpartyId} />}
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-        >
-          {t("common.create")}
-        </button>
-        {errors.root && (
-          <p role="alert" className="w-full text-sm text-danger">
-            {errors.root.message}
-          </p>
-        )}
-      </form>
+          {errors.root && (
+            <p role="alert" className="text-sm text-danger">
+              {errors.root.message}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+            >
+              {t("common.create")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("common.cancel")}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

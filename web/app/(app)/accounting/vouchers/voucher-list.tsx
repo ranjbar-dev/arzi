@@ -11,6 +11,10 @@ import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
 import type { VoucherSummary } from "@/lib/vouchers";
 import { DateField } from "@/components/date-field";
+import { Modal } from "@/components/modal";
+import { NewButton } from "@/components/new-button";
+import { Field, fieldInputClass } from "@/components/form-field";
+import { useState } from "react";
 import { JournalGenerationForm } from "./journal-generation-form";
 
 const schema = z.object({
@@ -36,6 +40,7 @@ export function VoucherList({ fiscalYearId }: { fiscalYearId: number | null }) {
   const { t } = useTranslation();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: vouchers, isLoading } = useQuery({
     queryKey: ["vouchers", fiscalYearId],
@@ -63,6 +68,7 @@ export function VoucherList({ fiscalYearId }: { fiscalYearId: number | null }) {
       }),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["vouchers"] });
+      setCreateOpen(false);
       router.push(`/accounting/vouchers/${result.id}`);
     },
     onError: (err: ApiError) => {
@@ -76,6 +82,10 @@ export function VoucherList({ fiscalYearId }: { fiscalYearId: number | null }) {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <NewButton onClickAction={() => setCreateOpen(true)}>{t("vouchers.newVoucher")}</NewButton>
+      </div>
+
       {isLoading ? (
         <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
       ) : (
@@ -125,37 +135,41 @@ export function VoucherList({ fiscalYearId }: { fiscalYearId: number | null }) {
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit((values) => createMutation.mutate(values))}
-        className="flex flex-wrap items-end gap-3"
-      >
-        <DateField
-          label={t("vouchers.voucherDate")}
-          value={voucherDateField.value}
-          onChangeAction={voucherDateField.onChange}
-        />
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("vouchers.description")}</label>
-          <input
-            type="text"
-            placeholder="خرید پسته از انبار مرکزی"
-            {...register("description")}
-            className="h-9 w-64 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-        >
-          {t("vouchers.newVoucher")}
-        </button>
-        {(errors.voucherDate || errors.description || errors.root) && (
-          <p role="alert" className="w-full text-sm text-danger">
-            {errors.root?.message ?? t("common.error")}
-          </p>
-        )}
-      </form>
+      <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("vouchers.newVoucher")}>
+        <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <DateField
+              label={t("vouchers.voucherDate")}
+              value={voucherDateField.value}
+              onChangeAction={voucherDateField.onChange}
+            />
+            <Field label={t("vouchers.description")} wide>
+              <input type="text" placeholder="خرید پسته از انبار مرکزی" {...register("description")} className={fieldInputClass} />
+            </Field>
+          </div>
+          {(errors.voucherDate || errors.description || errors.root) && (
+            <p role="alert" className="text-sm text-danger">
+              {errors.root?.message ?? t("common.error")}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+            >
+              {t("common.save")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("common.cancel")}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       <JournalGenerationForm fiscalYearId={fiscalYearId} />
     </div>
