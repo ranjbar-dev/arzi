@@ -173,6 +173,7 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             printf '%s\n' "$DEPLOY_ENV_FILE" > .env
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml down
             docker compose -f docker-compose.yml -f docker-compose.prod.yml build
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 
