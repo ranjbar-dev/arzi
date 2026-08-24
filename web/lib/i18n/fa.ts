@@ -84,6 +84,7 @@ export const fa = {
   accounts: {
     // Captions verbatim from specs/03-accounting-core/03-12-a #12.2 (SNewu).
     title: "سرفصلهای حسابداری",
+    subtitle: "درخت حساب‌های کل، معین و تفصیلی",
     generalCode: "کد کل",
     subsidiaryCode: "کد معین",
     analyticCode: "کد تفضیل",
@@ -91,7 +92,7 @@ export const fa = {
     fullName: "نام کامل",
     childCount: "زیر شاخه",
     lock: "قفل",
-    newCode: "+ جدید",
+    newCode: "جدید",
     editName: "نام",
     editCode: "کد",
     deleteCode: "حذف",
@@ -118,10 +119,18 @@ export const fa = {
     notPostable: "این حساب سطح آخر نیست و قابل ثبت سند نمی‌باشد.",
     postable: "این حساب سطح آخر است و قابل ثبت سند می‌باشد.",
     lockedAccount: "این حساب قفل است.",
+    parentLabel: "شاخه والد",
+    levelLabel: "سطح",
+    levelKol: "کل",
+    levelMoein: "معین",
+    levelTafsil1: "تفصیلی ۱",
+    levelTafsil2: "تفصیلی ۲",
+    emptyBranch: "این شاخه خالی است.",
   },
   vouchers: {
     // 03-03-b.md §3.6's canonical labels (SanadViewU.pas:126-128 window captions).
     title: "اسناد معین",
+    subtitle: "ثبت، تایید و پیگیری اسناد حسابداری",
     newVoucher: "سند جدید",
     voucherNumber: "شماره سند",
     voucherDate: "تاریخ سند",

@@ -17,6 +17,11 @@ import { toPersianDigits } from "@/lib/format";
 import { ownCode, type AccountDetail, type AccountSummary } from "@/lib/accounts";
 import { AccountPicker } from "@/components/account-picker";
 import { LockIcon } from "@/components/lock-icon";
+import { Modal } from "@/components/modal";
+import { NewButton } from "@/components/new-button";
+import { Field, fieldInputClass } from "@/components/form-field";
+
+const LEVEL_KEYS = ["accounts.levelKol", "accounts.levelMoein", "accounts.levelTafsil1", "accounts.levelTafsil2"] as const;
 
 const codeNameSchema = z.object({
   code: z.number().int().min(1),
@@ -211,13 +216,7 @@ export function ChartOfAccountsEditor({ canLock }: { canLock: boolean }) {
 
       {/* Toolbar */}
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setDialog("create")}
-          className="h-9 cursor-pointer rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          {t("accounts.newCode")}
-        </button>
+        <NewButton onClickAction={() => setDialog("create")}>{t("accounts.newCode")}</NewButton>
         <button
           type="button"
           disabled={toolbarDisabled}
@@ -280,7 +279,10 @@ export function ChartOfAccountsEditor({ canLock }: { canLock: boolean }) {
 
       {selected && (
         <div className="rounded-md border border-border bg-surface p-3 text-sm">
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-muted-foreground">
+            <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground">
+              {t(LEVEL_KEYS[selected.level - 1])}
+            </span>
             <span>
               LTR: <span className="tabular-nums text-foreground">{selected.codeLtr}</span>
             </span>
@@ -340,7 +342,7 @@ export function ChartOfAccountsEditor({ canLock }: { canLock: boolean }) {
               {children?.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    —
+                    {t("accounts.emptyBranch")}
                   </td>
                 </tr>
               )}
@@ -349,99 +351,116 @@ export function ChartOfAccountsEditor({ canLock }: { canLock: boolean }) {
         </div>
       )}
 
-      {dialog === "create" && (
+      <Modal open={dialog === "create"} onCloseAction={() => setDialog(null)} title={t("accounts.newAccountTitle")}>
         <form
           onSubmit={createForm.handleSubmit((values) => createMutation.mutate(values))}
-          className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-surface p-3"
+          className="flex flex-col gap-4"
         >
-          <h3 className="w-full text-sm font-medium text-foreground">{t("accounts.newAccountTitle")}</h3>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("accounts.codeLabel")}</label>
-            <input
-              type="number"
-              {...createForm.register("code", { valueAsNumber: true })}
-              className="h-9 w-28 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              autoFocus
-            />
+          <div className="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+            <span>{t("accounts.parentLabel")}:</span>
+            <span className="font-medium text-foreground">
+              {parentId === null
+                ? t("accounts.root")
+                : `${toPersianDigits(ownCode(stack[stack.length - 1]))} ${stack[stack.length - 1].name}`}
+            </span>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("accounts.nameLabel")}</label>
-            <input
-              type="text"
-              {...createForm.register("name")}
-              className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t("accounts.codeLabel")}>
+              <input
+                type="number"
+                placeholder="11"
+                {...createForm.register("code", { valueAsNumber: true })}
+                className={fieldInputClass}
+                autoFocus
+              />
+            </Field>
+            <Field label={t("accounts.nameLabel")}>
+              <input type="text" placeholder="بانک ملت" {...createForm.register("name")} className={fieldInputClass} />
+            </Field>
           </div>
-          <button
-            type="submit"
-            className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {t("common.create")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setDialog(null)}
-            className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {t("common.cancel")}
-          </button>
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("common.create")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDialog(null)}
+              className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("common.cancel")}
+            </button>
+          </div>
         </form>
+      </Modal>
+
+      {selected && (
+        <Modal open={dialog === "rename"} onCloseAction={() => setDialog(null)} title={t("accounts.editName")}>
+          <form onSubmit={renameForm.handleSubmit((v) => renameMutation.mutate(v.name))} className="flex flex-col gap-4">
+            <Field label={t("accounts.nameLabel")}>
+              <input
+                type="text"
+                placeholder="بانک ملت"
+                defaultValue={selected.name}
+                {...renameForm.register("name")}
+                className={fieldInputClass}
+                autoFocus
+              />
+            </Field>
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {t("common.save")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDialog(null)}
+                className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {t("common.cancel")}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
-      {dialog === "rename" && selected && (
-        <form
-          onSubmit={renameForm.handleSubmit((v) => renameMutation.mutate(v.name))}
-          className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-surface p-3"
-        >
-          <input
-            type="text"
-            defaultValue={selected.name}
-            {...renameForm.register("name")}
-            className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            autoFocus
-          />
-          <button
-            type="submit"
-            className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent"
+      {selected && (
+        <Modal open={dialog === "recode"} onCloseAction={() => setDialog(null)} title={t("accounts.editCode")}>
+          <form
+            onSubmit={recodeForm.handleSubmit((v) => recodeMutation.mutate(Number(v.code)))}
+            className="flex flex-col gap-4"
           >
-            {t("common.save")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setDialog(null)}
-            className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {t("common.cancel")}
-          </button>
-        </form>
-      )}
-
-      {dialog === "recode" && selected && (
-        <form
-          onSubmit={recodeForm.handleSubmit((v) => recodeMutation.mutate(Number(v.code)))}
-          className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-surface p-3"
-        >
-          <input
-            type="number"
-            defaultValue={ownCode(selected)}
-            {...recodeForm.register("code", { valueAsNumber: true })}
-            className="h-9 w-28 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            autoFocus
-          />
-          <button
-            type="submit"
-            className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {t("common.save")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setDialog(null)}
-            className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {t("common.cancel")}
-          </button>
-        </form>
+            <Field label={t("accounts.codeLabel")}>
+              <input
+                type="number"
+                placeholder="11"
+                defaultValue={ownCode(selected)}
+                {...recodeForm.register("code", { valueAsNumber: true })}
+                className={fieldInputClass}
+                autoFocus
+              />
+            </Field>
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {t("common.save")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDialog(null)}
+                className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {t("common.cancel")}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );
