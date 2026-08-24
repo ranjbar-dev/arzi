@@ -1,7 +1,8 @@
+# syntax=docker/dockerfile:1
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -14,7 +15,9 @@ ARG API_INTERNAL_URL=http://api:8080
 ENV API_INTERNAL_URL=$API_INTERNAL_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+# .next/cache as a cache mount keeps Next's incremental build cache across deploys on the same
+# host (BuildKit only) — Next.js's own documented Docker pattern.
+RUN --mount=type=cache,target=/app/.next/cache npm run build
 
 FROM node:20-alpine AS runtime
 WORKDIR /app

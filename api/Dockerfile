@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
 WORKDIR /app
 
@@ -9,10 +10,18 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+# Cache mounts persist cargo's registry and incremental build artifacts across deploys on the
+# same host (BuildKit only, not a Docker layer) — cargo-chef's own recommended pattern. The
+# compiled binary is copied out to a non-cache-mounted path since /app/target's contents vanish
+# with the mount when the RUN step ends.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo chef cook --release --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY api api
-RUN cargo build --release -p api
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo build --release -p api && cp target/release/api /app/api-bin
 
 FROM debian:trixie-slim AS runtime
 # Base bumped bookworm -> trixie (2026-08-23, incidental to step 7.3): `cargo-chef:latest-rust-1`
@@ -32,6 +41,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certifi
     && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update && apt-get install -y --no-install-recommends postgresql-client-17 \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/api /usr/local/bin/api
+COPY --from=builder /app/api-bin /usr/local/bin/api
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/api"]
