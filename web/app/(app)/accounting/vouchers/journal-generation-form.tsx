@@ -5,11 +5,12 @@
 // §8.1) — by voucher number OR by date, never both.
 
 import { useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch, useController } from "react-hook-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 import { apiRequest, ApiError } from "@/lib/api-client";
+import { DateField } from "@/components/date-field";
 
 const ERROR_KEYS: Record<string, string> = {
   description_too_short: "vouchers.descriptionTooShort",
@@ -40,6 +41,9 @@ export function JournalGenerationForm({ fiscalYearId }: { fiscalYearId: number }
   const { register, handleSubmit, control, setError, formState: { errors, isSubmitting } } =
     useForm<FormValues>({ defaultValues: { rangeBy: "date" } });
   const rangeBy = useWatch({ control, name: "rangeBy" });
+  const { field: fromDateField } = useController({ control, name: "fromDate" });
+  const { field: toDateField } = useController({ control, name: "toDate" });
+  const { field: voucherDateField } = useController({ control, name: "voucherDate" });
 
   const mutation = useMutation({
     mutationFn: (values: FormValues) => {
@@ -100,34 +104,37 @@ export function JournalGenerationForm({ fiscalYearId }: { fiscalYearId: number }
       <div className="flex flex-wrap items-end gap-3">
         {rangeBy === "date" ? (
           <>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-muted-foreground">{t("vouchers.fromDate")}</label>
-              <input type="date" {...register("fromDate")} className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-muted-foreground">{t("vouchers.toDate")}</label>
-              <input type="date" {...register("toDate")} className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
-            </div>
+            <DateField
+              label={t("vouchers.fromDate")}
+              value={fromDateField.value ?? ""}
+              onChangeAction={fromDateField.onChange}
+            />
+            <DateField
+              label={t("vouchers.toDate")}
+              value={toDateField.value ?? ""}
+              onChangeAction={toDateField.onChange}
+            />
           </>
         ) : (
           <>
             <div className="flex flex-col gap-1">
               <label className="text-sm text-muted-foreground">{t("vouchers.fromVoucherNumber")}</label>
-              <input type="number" {...register("fromVoucherNumber", { valueAsNumber: true })} className="h-9 w-28 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+              <input type="number" placeholder="1" {...register("fromVoucherNumber", { valueAsNumber: true })} className="h-9 w-28 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-sm text-muted-foreground">{t("vouchers.toVoucherNumber")}</label>
-              <input type="number" {...register("toVoucherNumber", { valueAsNumber: true })} className="h-9 w-28 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+              <input type="number" placeholder="50" {...register("toVoucherNumber", { valueAsNumber: true })} className="h-9 w-28 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
             </div>
           </>
         )}
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("vouchers.voucherDate")}</label>
-          <input type="date" {...register("voucherDate")} className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
-        </div>
+        <DateField
+          label={t("vouchers.voucherDate")}
+          value={voucherDateField.value}
+          onChangeAction={voucherDateField.onChange}
+        />
         <div className="flex flex-col gap-1">
           <label className="text-sm text-muted-foreground">{t("vouchers.description")}</label>
-          <input type="text" {...register("description")} className="h-9 w-64 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+          <input type="text" placeholder="روزنامه فروردین ۱۴۰۳" {...register("description")} className="h-9 w-64 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
         </div>
         <button
           type="submit"

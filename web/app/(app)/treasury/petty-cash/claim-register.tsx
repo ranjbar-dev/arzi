@@ -5,7 +5,7 @@
 // collapsed into inline rows here — see petty_cash.rs's own doc comment on
 // why claims are whole-form saves, not incremental line CRUD).
 
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, useController, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,6 +14,10 @@ import { useState } from "react";
 import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
 import { AccountField } from "@/components/account-field";
+import { DateField } from "@/components/date-field";
+import { Modal } from "@/components/modal";
+import { NewButton } from "@/components/new-button";
+import { Field, fieldInputClass } from "@/components/form-field";
 import type { PettyCashClaimSummary } from "@/lib/treasury";
 
 const schema = z.object({
@@ -45,6 +49,7 @@ export function ClaimRegister({ fiscalYearId }: { fiscalYearId: number | null })
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [custodianAccountId, setCustodianAccountId] = useState<number | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: claims, isLoading } = useQuery({
     queryKey: ["petty-cash-claims", fiscalYearId],
@@ -64,6 +69,7 @@ export function ClaimRegister({ fiscalYearId }: { fiscalYearId: number | null })
     defaultValues: { lines: [{ expenseAccountId: 0, amount: undefined, description: "" }] },
   });
   const { fields, append, remove } = useFieldArray({ control, name: "lines" });
+  const { field: claimDateField } = useController({ control, name: "claimDate" });
 
   const createMutation = useMutation({
     mutationFn: (values: FormOutput) => {
@@ -76,6 +82,7 @@ export function ClaimRegister({ fiscalYearId }: { fiscalYearId: number | null })
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["petty-cash-claims"] });
       reset({ lines: [{ expenseAccountId: undefined, amount: undefined, description: "" }] });
+      setCreateOpen(false);
     },
     onError: (err: ApiError) => setError("root", { message: t(ERROR_KEYS[err.message] ?? "common.error") }),
   });
@@ -91,6 +98,10 @@ export function ClaimRegister({ fiscalYearId }: { fiscalYearId: number | null })
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <NewButton onClickAction={() => setCreateOpen(true)}>{t("treasury.newClaim")}</NewButton>
+      </div>
+
       {isLoading ? (
         <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
       ) : (
@@ -137,81 +148,85 @@ export function ClaimRegister({ fiscalYearId }: { fiscalYearId: number | null })
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit((values) => createMutation.mutate(values))}
-        className="flex flex-col gap-3 rounded-md border border-border p-3"
-      >
-        <h2 className="text-sm font-semibold text-foreground">{t("treasury.newClaim")}</h2>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.claimNumber")}</label>
-            <input type="text" {...register("claimNumber")} className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+      <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("treasury.newClaim")} widthClassName="w-[min(92vw,40rem)]">
+        <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label={t("treasury.claimNumber")}>
+              <input type="text" placeholder="1" {...register("claimNumber")} className={fieldInputClass} autoFocus />
+            </Field>
+            <DateField label={t("treasury.claimDate")} value={claimDateField.value} onChangeAction={claimDateField.onChange} />
+            <Field label={t("treasury.description")} wide>
+              <input type="text" placeholder="تنخواه صندوق دفتر مرکزی" {...register("description")} className={fieldInputClass} />
+            </Field>
+            <AccountField label={t("treasury.custodian")} value={custodianAccountId} onChangeAction={setCustodianAccountId} />
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.claimDate")}</label>
-            <input type="date" {...register("claimDate")} className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.description")}</label>
-            <input type="text" {...register("description")} className="h-9 w-64 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
-          </div>
-          <AccountField label={t("treasury.custodian")} value={custodianAccountId} onChangeAction={setCustodianAccountId} />
-        </div>
 
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-foreground">{t("treasury.expenseLines")}</h3>
-          {fields.map((field, index) => (
-            <div key={field.id} className="flex flex-wrap items-end gap-2 rounded-md border border-border p-2">
-              <ExpenseAccountField control={control} index={index} />
-              <div className="flex flex-col gap-1">
-                <label className="text-sm text-muted-foreground">{t("treasury.amount")}</label>
-                <input
-                  type="number"
-                  {...register(`lines.${index}.amount`)}
-                  className="h-9 w-28 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                />
+          <div className="flex flex-col gap-2">
+            <h3 className="text-sm font-medium text-foreground">{t("treasury.expenseLines")}</h3>
+            {fields.map((field, index) => (
+              <div key={field.id} className="flex flex-wrap items-end gap-2 rounded-md border border-border p-2">
+                <ExpenseAccountField control={control} index={index} />
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm text-muted-foreground">{t("treasury.amount")}</label>
+                  <input
+                    type="number"
+                    placeholder="200000"
+                    {...register(`lines.${index}.amount`)}
+                    className="h-9 w-28 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm text-muted-foreground">{t("treasury.description")}</label>
+                  <input
+                    type="text"
+                    placeholder="هزینه ایاب و ذهاب"
+                    {...register(`lines.${index}.description`)}
+                    className="h-9 w-48 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  />
+                </div>
+                {fields.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => remove(index)}
+                    className="h-9 cursor-pointer rounded-md border border-danger px-3 text-sm text-danger hover:bg-danger/10 focus-visible:ring-2 focus-visible:ring-danger"
+                  >
+                    {t("treasury.removeLine")}
+                  </button>
+                )}
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm text-muted-foreground">{t("treasury.description")}</label>
-                <input
-                  type="text"
-                  {...register(`lines.${index}.description`)}
-                  className="h-9 w-48 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                />
-              </div>
-              {fields.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => remove(index)}
-                  className="h-9 cursor-pointer rounded-md border border-danger px-3 text-sm text-danger hover:bg-danger/10 focus-visible:ring-2 focus-visible:ring-danger"
-                >
-                  {t("treasury.removeLine")}
-                </button>
-              )}
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={() => append({ expenseAccountId: 0, amount: undefined, description: "" })}
-            className="h-9 w-fit cursor-pointer rounded-md border border-border px-3 text-sm text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {t("treasury.addLine")}
-          </button>
-        </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => append({ expenseAccountId: 0, amount: undefined, description: "" })}
+              className="h-9 w-fit cursor-pointer rounded-md border border-border px-3 text-sm text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("treasury.addLine")}
+            </button>
+          </div>
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="h-9 w-fit cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-        >
-          {t("treasury.save")}
-        </button>
-        {(errors.claimDate || errors.lines || errors.root) && (
-          <p role="alert" className="text-sm text-danger">
-            {errors.root?.message ?? t("common.error")}
-          </p>
-        )}
-      </form>
+          {(errors.claimDate || errors.lines || errors.root) && (
+            <p role="alert" className="text-sm text-danger">
+              {errors.root?.message ?? t("common.error")}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+            >
+              {t("treasury.save")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("common.cancel")}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
@@ -220,7 +235,6 @@ export function ClaimRegister({ fiscalYearId }: { fiscalYearId: number | null })
  * only known once the operator picks one, but `react-hook-form`'s
  * `setValue` still needs a field name, so this small wrapper is kept
  * separate rather than inlined into the map above. */
-import { useController, type Control } from "react-hook-form";
 
 function ExpenseAccountField({ control, index }: { control: Control<FormValues>; index: number }) {
   const { field } = useController({ control, name: `lines.${index}.expenseAccountId` });

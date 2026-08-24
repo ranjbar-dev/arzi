@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import { apiRequest } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
 import type { PartyDetail, PartyBalance } from "@/lib/parties";
+import { Select } from "@/components/select";
 
 interface FiscalYear {
   id: number;
@@ -66,18 +67,13 @@ export function PartyCard({
 
       <div className="flex items-center gap-3">
         <label className="text-sm text-muted-foreground">{t("parties.fiscalYear")}</label>
-        <select
-          value={fiscalYearId ?? ""}
-          onChange={(e) => setFiscalYearId(e.target.value ? Number(e.target.value) : null)}
-          className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        >
-          <option value="">—</option>
-          {years?.map((y) => (
-            <option key={y.id} value={y.id}>
-              {toPersianDigits(y.year)}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={fiscalYearId ? String(fiscalYearId) : ""}
+          onChangeAction={(v) => setFiscalYearId(v ? Number(v) : null)}
+          placeholder="—"
+          className="h-9 w-40 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          options={(years ?? []).map((y) => ({ value: String(y.id), label: toPersianDigits(y.year) }))}
+        />
       </div>
 
       {balance && (

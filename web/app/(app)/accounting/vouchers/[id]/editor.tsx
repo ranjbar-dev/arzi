@@ -9,7 +9,7 @@
 // mutation, not a client-side draft buffer.
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useController } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +21,7 @@ import type { VoucherDetail } from "@/lib/vouchers";
 import { AccountPicker } from "@/components/account-picker";
 import { AccountLabel } from "@/components/account-label";
 import { LockIcon } from "@/components/lock-icon";
+import { DateField } from "@/components/date-field";
 
 const lineSchema = z
   .object({
@@ -131,6 +132,7 @@ export function VoucherEditor({ voucherId }: { voucherId: number }) {
   });
 
   const headerForm = useForm<HeaderValues>({ resolver: zodResolver(headerSchema) });
+  const { field: voucherDateField } = useController({ control: headerForm.control, name: "voucherDate" });
   const updateHeaderMutation = useMutation({
     mutationFn: (values: HeaderValues) =>
       apiRequest(`/api/v1/vouchers/${voucherId}`, { method: "PUT", body: JSON.stringify(values) }),
@@ -201,22 +203,21 @@ export function VoucherEditor({ voucherId }: { voucherId: number }) {
             <label className="text-sm text-muted-foreground">{t("vouchers.voucherNumber")}</label>
             <input
               type="number"
+              placeholder="101"
               {...headerForm.register("voucherNumber", { valueAsNumber: true })}
               className="h-9 w-28 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("vouchers.voucherDate")}</label>
-            <input
-              type="date"
-              {...headerForm.register("voucherDate")}
-              className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
+          <DateField
+            label={t("vouchers.voucherDate")}
+            value={voucherDateField.value}
+            onChangeAction={voucherDateField.onChange}
+          />
           <div className="flex flex-col gap-1">
             <label className="text-sm text-muted-foreground">{t("vouchers.description")}</label>
             <input
               type="text"
+              placeholder="خرید پسته از انبار مرکزی"
               {...headerForm.register("description")}
               className="h-9 w-64 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
@@ -328,6 +329,7 @@ export function VoucherEditor({ voucherId }: { voucherId: number }) {
             <label className="text-sm text-muted-foreground">{t("vouchers.debit")}</label>
             <input
               type="number"
+              placeholder="5000000"
               {...lineForm.register("debit", { valueAsNumber: true })}
               className="h-9 w-28 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
@@ -336,6 +338,7 @@ export function VoucherEditor({ voucherId }: { voucherId: number }) {
             <label className="text-sm text-muted-foreground">{t("vouchers.credit")}</label>
             <input
               type="number"
+              placeholder="5000000"
               {...lineForm.register("credit", { valueAsNumber: true })}
               className="h-9 w-28 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
@@ -344,6 +347,7 @@ export function VoucherEditor({ voucherId }: { voucherId: number }) {
             <label className="text-sm text-muted-foreground">{t("vouchers.lineDescription")}</label>
             <input
               type="text"
+              placeholder="بدهکار حساب بانک ملت"
               {...lineForm.register("description")}
               className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />

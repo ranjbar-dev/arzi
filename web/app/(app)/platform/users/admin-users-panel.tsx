@@ -8,6 +8,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
+import { Modal } from "@/components/modal";
+import { NewButton } from "@/components/new-button";
+import { Field, fieldInputClass } from "@/components/form-field";
 
 interface UserRow {
   id: number;
@@ -34,6 +37,7 @@ export function AdminUsersPanel() {
   const queryClient = useQueryClient();
   const [editingPermissionsFor, setEditingPermissionsFor] = useState<number | null>(null);
   const [settingPasswordFor, setSettingPasswordFor] = useState<number | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["admin", "users"],
@@ -56,6 +60,7 @@ export function AdminUsersPanel() {
     onSuccess: () => {
       resetCreate();
       invalidateUsers();
+      setCreateOpen(false);
     },
     onError: (err: ApiError) => {
       setCreateError("root", {
@@ -72,7 +77,10 @@ export function AdminUsersPanel() {
 
   return (
     <div className="flex flex-col gap-8">
-      <h1 className="text-lg font-semibold text-foreground">{t("admin.users")}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-foreground">{t("admin.users")}</h1>
+        <NewButton onClickAction={() => setCreateOpen(true)}>{t("admin.createUser")}</NewButton>
+      </div>
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
@@ -141,6 +149,7 @@ export function AdminUsersPanel() {
           </label>
           <input
             id="username"
+            placeholder="a.rezaei"
             {...registerCreate("username")}
             className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />
@@ -205,6 +214,7 @@ function SetPasswordDialog({ userId, onClose }: { userId: number; onClose: () =>
         <input
           type="password"
           autoFocus
+          placeholder="••••••••"
           {...register("newPassword")}
           className="h-9 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />

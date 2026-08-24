@@ -67,3 +67,47 @@ body {
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+/* Shared create/edit modal shell (components/modal.tsx) — native <dialog>,
+   animated with @starting-style rather than a JS animation library. */
+dialog.modal {
+  opacity: 0;
+  transform: translateY(0.5rem) scale(0.98);
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease,
+    overlay 150ms ease allow-discrete,
+    display 150ms ease allow-discrete;
+}
+dialog.modal[open] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+@starting-style {
+  dialog.modal[open] {
+    opacity: 0;
+    transform: translateY(0.5rem) scale(0.98);
+  }
+}
+dialog.modal::backdrop {
+  background: color-mix(in srgb, var(--color-foreground) 45%, transparent);
+  opacity: 0;
+  transition:
+    opacity 150ms ease,
+    display 150ms ease allow-discrete,
+    overlay 150ms ease allow-discrete;
+}
+dialog.modal[open]::backdrop {
+  opacity: 1;
+}
+@starting-style {
+  dialog.modal[open]::backdrop {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  dialog.modal,
+  dialog.modal::backdrop {
+    transition: none;
+  }
+}

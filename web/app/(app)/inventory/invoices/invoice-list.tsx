@@ -5,7 +5,7 @@
 // the 5.7 settlement view.
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,6 +15,8 @@ import Link from "next/link";
 import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
 import { AccountField } from "@/components/account-field";
+import { DateField } from "@/components/date-field";
+import { Select } from "@/components/select";
 import type { InventoryDocument, InventoryDocumentStatus, InventoryDocumentType, Warehouse } from "@/lib/inventory";
 import { COMMERCIAL_TYPES, DOCUMENT_TYPE_LABEL, STATUS_LABEL } from "@/lib/inventory";
 
@@ -67,7 +69,7 @@ export function InvoiceList({ fiscalYearId }: { fiscalYearId: number | null }) {
 
   const [selectedType, setSelectedType] = useState<InventoryDocumentType>("receipt");
   const {
-    register,
+    control,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
@@ -108,33 +110,23 @@ export function InvoiceList({ fiscalYearId }: { fiscalYearId: number | null }) {
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
           <label className="text-sm text-muted-foreground">{t("inventory.documentType")}</label>
-          <select
+          <Select
             value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value as InventoryDocumentType | "")}
+            onChangeAction={(v) => setTypeFilter(v as InventoryDocumentType | "")}
+            placeholder={t("inventory.allTypes")}
             className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <option value="">{t("inventory.allTypes")}</option>
-            {ALL_TYPES.map((ty) => (
-              <option key={ty} value={ty}>
-                {t(DOCUMENT_TYPE_LABEL[ty])}
-              </option>
-            ))}
-          </select>
+            options={ALL_TYPES.map((ty) => ({ value: ty, label: t(DOCUMENT_TYPE_LABEL[ty]) }))}
+          />
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-sm text-muted-foreground">{t("treasury.status")}</label>
-          <select
+          <Select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as InventoryDocumentStatus | "")}
+            onChangeAction={(v) => setStatusFilter(v as InventoryDocumentStatus | "")}
+            placeholder={t("treasury.allStatuses")}
             className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <option value="">{t("treasury.allStatuses")}</option>
-            {ALL_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {t(STATUS_LABEL[s])}
-              </option>
-            ))}
-          </select>
+            options={ALL_STATUSES.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
+          />
         </div>
       </div>
 
@@ -154,7 +146,11 @@ export function InvoiceList({ fiscalYearId }: { fiscalYearId: number | null }) {
             </thead>
             <tbody>
               {documents?.map((d) => (
-                <tr key={d.id} className="border-b border-border last:border-0 hover:bg-muted">
+                <tr
+                  key={d.id}
+                  onClick={() => router.push(`/inventory/invoices/${d.id}`)}
+                  className="cursor-pointer border-b border-border last:border-0 hover:bg-muted"
+                >
                   <td className="px-3 py-2">
                     <Link
                       href={`/inventory/invoices/${d.id}`}
@@ -188,55 +184,49 @@ export function InvoiceList({ fiscalYearId }: { fiscalYearId: number | null }) {
         <h2 className="w-full text-sm font-semibold text-foreground">{t("inventory.newInvoice")}</h2>
         <div className="flex flex-col gap-1">
           <label className="text-sm text-muted-foreground">{t("inventory.documentType")}</label>
-          <select
-            {...register("documentType", { onChange: (e) => setSelectedType(e.target.value as InventoryDocumentType) })}
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {ALL_TYPES.map((ty) => (
-              <option key={ty} value={ty}>
-                {t(DOCUMENT_TYPE_LABEL[ty])}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("inventory.invoiceDate")}</label>
-          <input
-            type="date"
-            {...register("documentDate")}
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          <Controller
+            name="documentType"
+            control={control}
+            render={({ field }) => (
+              <Select
+                value={field.value ?? ""}
+                onChangeAction={(v) => {
+                  field.onChange(v);
+                  setSelectedType(v as InventoryDocumentType);
+                }}
+                className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                options={ALL_TYPES.map((ty) => ({ value: ty, label: t(DOCUMENT_TYPE_LABEL[ty]) }))}
+              />
+            )}
           />
         </div>
+        <Controller
+          name="documentDate"
+          control={control}
+          render={({ field }) => (
+            <DateField label={t("inventory.invoiceDate")} value={field.value ?? ""} onChangeAction={field.onChange} />
+          )}
+        />
         <div className="flex flex-col gap-1">
           <label className="text-sm text-muted-foreground">{t("inventory.warehouse")}</label>
-          <select
-            value={warehouseId ?? ""}
-            onChange={(e) => setWarehouseId(e.target.value ? Number(e.target.value) : null)}
+          <Select
+            value={warehouseId ? String(warehouseId) : ""}
+            onChangeAction={(v) => setWarehouseId(v ? Number(v) : null)}
+            placeholder="—"
             className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <option value="">—</option>
-            {warehouses?.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
+            options={(warehouses ?? []).map((w) => ({ value: String(w.id), label: w.name }))}
+          />
         </div>
         {isTransfer && (
           <div className="flex flex-col gap-1">
             <label className="text-sm text-muted-foreground">{t("inventory.destinationWarehouse")}</label>
-            <select
-              value={destinationWarehouseId ?? ""}
-              onChange={(e) => setDestinationWarehouseId(e.target.value ? Number(e.target.value) : null)}
+            <Select
+              value={destinationWarehouseId ? String(destinationWarehouseId) : ""}
+              onChangeAction={(v) => setDestinationWarehouseId(v ? Number(v) : null)}
+              placeholder="—"
               className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <option value="">—</option>
-              {warehouses?.filter((w) => w.id !== warehouseId).map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
+              options={(warehouses ?? []).filter((w) => w.id !== warehouseId).map((w) => ({ value: String(w.id), label: w.name }))}
+            />
           </div>
         )}
         {isCommercial && <AccountField label={t("inventory.counterparty")} value={counterpartyId} onChangeAction={setCounterpartyId} />}

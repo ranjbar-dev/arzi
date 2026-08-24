@@ -20,6 +20,7 @@ export function LoginForm() {
           type="text"
           required
           autoComplete="organization"
+          placeholder="arzi-co"
           className="h-10 rounded-md border border-border bg-surface px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
       </div>

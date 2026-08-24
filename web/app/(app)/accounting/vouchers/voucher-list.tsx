@@ -1,6 +1,6 @@
 "use client";
 
-import { useForm } from "react-hook-form";
+import { useForm, useController } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import Link from "next/link";
 import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
 import type { VoucherSummary } from "@/lib/vouchers";
+import { DateField } from "@/components/date-field";
 import { JournalGenerationForm } from "./journal-generation-form";
 
 const schema = z.object({
@@ -47,10 +48,12 @@ export function VoucherList({ fiscalYearId }: { fiscalYearId: number | null }) {
 
   const {
     register,
+    control,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
+  const { field: voucherDateField } = useController({ control, name: "voucherDate" });
 
   const createMutation = useMutation({
     mutationFn: (values: FormValues) =>
@@ -90,7 +93,11 @@ export function VoucherList({ fiscalYearId }: { fiscalYearId: number | null }) {
             </thead>
             <tbody>
               {vouchers?.map((v) => (
-                <tr key={v.id} className="border-b border-border last:border-0 hover:bg-muted">
+                <tr
+                  key={v.id}
+                  onClick={() => router.push(`/accounting/vouchers/${v.id}`)}
+                  className="cursor-pointer border-b border-border last:border-0 hover:bg-muted"
+                >
                   <td className="px-3 py-2">
                     <Link
                       href={`/accounting/vouchers/${v.id}`}
@@ -122,18 +129,16 @@ export function VoucherList({ fiscalYearId }: { fiscalYearId: number | null }) {
         onSubmit={handleSubmit((values) => createMutation.mutate(values))}
         className="flex flex-wrap items-end gap-3"
       >
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("vouchers.voucherDate")}</label>
-          <input
-            type="date"
-            {...register("voucherDate")}
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          />
-        </div>
+        <DateField
+          label={t("vouchers.voucherDate")}
+          value={voucherDateField.value}
+          onChangeAction={voucherDateField.onChange}
+        />
         <div className="flex flex-col gap-1">
           <label className="text-sm text-muted-foreground">{t("vouchers.description")}</label>
           <input
             type="text"
+            placeholder="خرید پسته از انبار مرکزی"
             {...register("description")}
             className="h-9 w-64 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />

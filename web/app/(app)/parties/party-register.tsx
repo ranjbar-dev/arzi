@@ -130,13 +130,12 @@ export function PartyRegister({ canLock }: { canLock: boolean }) {
         </div>
       )}
 
-      {dialog !== null && (
-        <PartyForm
-          kind={kind}
-          partyId={dialog === "create" ? null : dialog}
-          onCloseAction={() => setDialog(null)}
-        />
-      )}
+      <PartyForm
+        open={dialog !== null}
+        kind={kind}
+        partyId={dialog === "create" || dialog === null ? null : dialog}
+        onCloseAction={() => setDialog(null)}
+      />
     </div>
   );
 }

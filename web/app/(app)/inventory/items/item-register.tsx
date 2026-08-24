@@ -6,13 +6,17 @@
 // own deferred manual test #4).
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
+import { Modal } from "@/components/modal";
+import { NewButton } from "@/components/new-button";
+import { Field, fieldInputClass } from "@/components/form-field";
+import { Select } from "@/components/select";
 import type { Item, PistachioGrade, UnitOfMeasure, Warehouse } from "@/lib/inventory";
 
 const schema = z.object({
@@ -41,6 +45,7 @@ export function ItemRegister() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [warehouseIds, setWarehouseIds] = useState<number[]>([]);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: items, isLoading } = useQuery({
     queryKey: ["items"],
@@ -61,6 +66,7 @@ export function ItemRegister() {
 
   const {
     register,
+    control,
     handleSubmit,
     setError,
     reset,
@@ -77,6 +83,7 @@ export function ItemRegister() {
       queryClient.invalidateQueries({ queryKey: ["items"] });
       reset();
       setWarehouseIds([]);
+      setCreateOpen(false);
     },
     onError: (err: ApiError) => setError("root", { message: t(ERROR_KEYS[err.message] ?? "common.error") }),
   });
@@ -85,6 +92,10 @@ export function ItemRegister() {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <NewButton onClickAction={() => setCreateOpen(true)}>{t("inventory.newItem")}</NewButton>
+      </div>
+
       {isLoading ? (
         <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
       ) : (
@@ -121,124 +132,106 @@ export function ItemRegister() {
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit((values) => createMutation.mutate(values))}
-        className="flex flex-col gap-3 rounded-md border border-border p-3"
-      >
-        <h2 className="text-sm font-semibold text-foreground">{t("inventory.newItem")}</h2>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("inventory.itemCode")}</label>
-            <input
-              type="number"
-              {...register("code")}
-              className="h-9 w-28 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
+      <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("inventory.newItem")}>
+        <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label={t("inventory.itemCode")}>
+              <input type="number" placeholder="101" {...register("code")} className={fieldInputClass} autoFocus />
+            </Field>
+            <Field label={t("inventory.itemName")} wide>
+              <input type="text" placeholder="پسته اکبری درجه یک" {...register("name")} className={fieldInputClass} />
+            </Field>
+            <Field label={t("inventory.specification")}>
+              <input type="text" placeholder="بسته ۵۰۰ گرمی" {...register("specification")} className={fieldInputClass} />
+            </Field>
+            <Field label={t("inventory.unitOfMeasure")}>
+              <Controller
+                name="unitOfMeasureId"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value ? String(field.value) : ""}
+                    onChangeAction={(v) => field.onChange(v ? Number(v) : undefined)}
+                    placeholder="—"
+                    className={fieldInputClass}
+                    options={(units ?? []).map((u) => ({ value: String(u.id), label: u.name }))}
+                  />
+                )}
+              />
+            </Field>
+            <Field label={t("inventory.salePrice")}>
+              <input type="number" placeholder="250000" {...register("salePrice")} className={fieldInputClass} />
+            </Field>
+            <Field label={t("inventory.minStock")}>
+              <input type="number" placeholder="50" {...register("minStock")} className={fieldInputClass} />
+            </Field>
+            <Field label={t("inventory.pistachioGrade")}>
+              <Controller
+                name="pistachioGradeId"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value ? String(field.value) : ""}
+                    onChangeAction={(v) => field.onChange(v ? Number(v) : undefined)}
+                    placeholder={t("inventory.none")}
+                    className={fieldInputClass}
+                    options={(grades ?? []).map((g) => ({ value: String(g.id), label: g.name }))}
+                  />
+                )}
+              />
+            </Field>
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input type="checkbox" {...register("isTaxable")} className="h-4 w-4 accent-accent" />
+              {t("inventory.taxable")}
+            </label>
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input type="checkbox" {...register("allowNegativeStock")} className="h-4 w-4 accent-accent" />
+              {t("inventory.allowNegativeStock")}
+            </label>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("inventory.itemName")}</label>
-            <input
-              type="text"
-              {...register("name")}
-              className="h-9 w-56 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("inventory.specification")}</label>
-            <input
-              type="text"
-              {...register("specification")}
-              className="h-9 w-40 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("inventory.unitOfMeasure")}</label>
-            <select
-              {...register("unitOfMeasureId")}
-              className="h-9 w-32 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <option value="">—</option>
-              {units?.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
+            <span className="text-sm text-muted-foreground">{t("inventory.assignedWarehouses")}</span>
+            <div className="flex flex-wrap gap-3">
+              {warehouses?.map((w) => (
+                <label key={w.id} className="flex items-center gap-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={warehouseIds.includes(w.id)}
+                    onChange={(e) =>
+                      setWarehouseIds((ids) => (e.target.checked ? [...ids, w.id] : ids.filter((id) => id !== w.id)))
+                    }
+                    className="h-4 w-4 accent-accent"
+                  />
+                  {w.name}
+                </label>
               ))}
-            </select>
+            </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("inventory.salePrice")}</label>
-            <input
-              type="number"
-              {...register("salePrice")}
-              className="h-9 w-32 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("inventory.minStock")}</label>
-            <input
-              type="number"
-              {...register("minStock")}
-              className="h-9 w-24 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("inventory.pistachioGrade")}</label>
-            <select
-              {...register("pistachioGradeId")}
-              className="h-9 w-32 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          {(errors.name || errors.code || errors.salePrice || errors.unitOfMeasureId || errors.root) && (
+            <p role="alert" className="text-sm text-danger">
+              {errors.root?.message ?? t("common.error")}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
             >
-              <option value="">{t("inventory.none")}</option>
-              {grades?.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
+              {t("common.save")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("common.cancel")}
+            </button>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-foreground">
-            <input type="checkbox" {...register("isTaxable")} className="h-4 w-4 accent-accent" />
-            {t("inventory.taxable")}
-          </label>
-          <label className="flex items-center gap-2 text-sm text-foreground">
-            <input type="checkbox" {...register("allowNegativeStock")} className="h-4 w-4 accent-accent" />
-            {t("inventory.allowNegativeStock")}
-          </label>
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-sm text-muted-foreground">{t("inventory.assignedWarehouses")}</span>
-          <div className="flex flex-wrap gap-3">
-            {warehouses?.map((w) => (
-              <label key={w.id} className="flex items-center gap-2 text-sm text-foreground">
-                <input
-                  type="checkbox"
-                  checked={warehouseIds.includes(w.id)}
-                  onChange={(e) =>
-                    setWarehouseIds((ids) => (e.target.checked ? [...ids, w.id] : ids.filter((id) => id !== w.id)))
-                  }
-                  className="h-4 w-4 accent-accent"
-                />
-                {w.name}
-              </label>
-            ))}
-          </div>
-        </div>
-        <div>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-          >
-            {t("common.save")}
-          </button>
-        </div>
-        {(errors.name || errors.code || errors.salePrice || errors.unitOfMeasureId || errors.root) && (
-          <p role="alert" className="text-sm text-danger">
-            {errors.root?.message ?? t("common.error")}
-          </p>
-        )}
-      </form>
+        </form>
+      </Modal>
     </div>
   );
 }

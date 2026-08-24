@@ -10,7 +10,7 @@
 // action (5.8) and an inline settlement panel (5.7).
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
+import { Select } from "@/components/select";
 import { AccountLabel } from "@/components/account-label";
 import { ItemPicker } from "@/components/item-picker";
 import { ItemLabel } from "@/components/item-label";
@@ -335,6 +336,7 @@ export function InvoiceEditor({ documentId }: { documentId: number }) {
                 <input
                   type="number"
                   step="0.001"
+                  placeholder="10"
                   {...lineForm.register("quantity")}
                   className="h-9 w-28 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 />
@@ -343,6 +345,7 @@ export function InvoiceEditor({ documentId }: { documentId: number }) {
                 <label className="text-sm text-muted-foreground">{t("inventory.unitPrice")}</label>
                 <input
                   type="number"
+                  placeholder="250000"
                   {...lineForm.register("unitPrice")}
                   className="h-9 w-32 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 />
@@ -360,6 +363,7 @@ export function InvoiceEditor({ documentId }: { documentId: number }) {
                 <label className="text-sm text-muted-foreground">{t("inventory.discount")}</label>
                 <input
                   type="number"
+                  placeholder="0"
                   {...lineForm.register("discountAmount")}
                   className="h-9 w-28 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 />
@@ -368,6 +372,7 @@ export function InvoiceEditor({ documentId }: { documentId: number }) {
                 <label className="text-sm text-muted-foreground">{t("inventory.tax")}</label>
                 <input
                   type="number"
+                  placeholder="0"
                   {...lineForm.register("taxAmount")}
                   className="h-9 w-28 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 />
@@ -397,26 +402,36 @@ export function InvoiceEditor({ documentId }: { documentId: number }) {
                   <label className="text-sm text-muted-foreground">{t("inventory.baleCount")}</label>
                   <input
                     type="number"
+                    placeholder="20"
                     {...pistachioForm.register("baleCount")}
                     className="h-9 w-24 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-sm text-muted-foreground">{t("inventory.tareAllowance")}</label>
-                  <select
-                    {...pistachioForm.register("tareAllowanceKg")}
-                    className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  >
-                    <option value="0.1">{t("inventory.tareAllowance100g")}</option>
-                    <option value="0.2">{t("inventory.tareAllowance200g")}</option>
-                    <option value="1.0">{t("inventory.tareAllowance1kg")}</option>
-                  </select>
+                  <Controller
+                    name="tareAllowanceKg"
+                    control={pistachioForm.control}
+                    render={({ field }) => (
+                      <Select
+                        value={field.value ?? ""}
+                        onChangeAction={field.onChange}
+                        className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        options={[
+                          { value: "0.1", label: t("inventory.tareAllowance100g") },
+                          { value: "0.2", label: t("inventory.tareAllowance200g") },
+                          { value: "1.0", label: t("inventory.tareAllowance1kg") },
+                        ]}
+                      />
+                    )}
+                  />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-sm text-muted-foreground">{t("inventory.grossWeight")}</label>
                   <input
                     type="number"
                     step="0.1"
+                    placeholder="1000"
                     {...pistachioForm.register("grossWeightKg")}
                     className="h-9 w-28 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   />
@@ -426,6 +441,7 @@ export function InvoiceEditor({ documentId }: { documentId: number }) {
                   <input
                     type="number"
                     step="0.01"
+                    placeholder="5"
                     {...pistachioForm.register("moisturePct")}
                     className="h-9 w-24 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   />
@@ -435,6 +451,7 @@ export function InvoiceEditor({ documentId }: { documentId: number }) {
                   <input
                     type="number"
                     step="0.01"
+                    placeholder="2"
                     {...pistachioForm.register("blankPct")}
                     className="h-9 w-24 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   />
@@ -444,6 +461,7 @@ export function InvoiceEditor({ documentId }: { documentId: number }) {
                   <input
                     type="number"
                     step="0.1"
+                    placeholder="0"
                     {...pistachioForm.register("otherDeductionsKg")}
                     className="h-9 w-28 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   />
@@ -452,6 +470,7 @@ export function InvoiceEditor({ documentId }: { documentId: number }) {
                   <label className="text-sm text-muted-foreground">{t("inventory.unitPrice")}</label>
                   <input
                     type="number"
+                    placeholder="250000"
                     {...pistachioForm.register("unitPrice")}
                     className="h-9 w-32 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   />

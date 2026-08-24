@@ -2,7 +2,7 @@
 
 // Step 4.5: the deposit-slip register (legacy FishListD equivalent).
 
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,6 +11,11 @@ import { useState } from "react";
 import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
 import { AccountField } from "@/components/account-field";
+import { Modal } from "@/components/modal";
+import { NewButton } from "@/components/new-button";
+import { Field, fieldInputClass } from "@/components/form-field";
+import { Select } from "@/components/select";
+import { DateField } from "@/components/date-field";
 import type { DepositChannel, DepositSlip } from "@/lib/treasury";
 
 const schema = z.object({
@@ -44,6 +49,7 @@ export function SlipRegister({ fiscalYearId }: { fiscalYearId: number | null }) 
   const queryClient = useQueryClient();
   const [payerAccountId, setPayerAccountId] = useState<number | null>(null);
   const [bankAccountId, setBankAccountId] = useState<number | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: slips, isLoading } = useQuery({
     queryKey: ["deposit-slips", fiscalYearId],
@@ -53,6 +59,7 @@ export function SlipRegister({ fiscalYearId }: { fiscalYearId: number | null }) 
 
   const {
     register,
+    control,
     handleSubmit,
     setError,
     reset,
@@ -70,6 +77,7 @@ export function SlipRegister({ fiscalYearId }: { fiscalYearId: number | null }) 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["deposit-slips"] });
       reset();
+      setCreateOpen(false);
     },
     onError: (err: ApiError) => setError("root", { message: t(ERROR_KEYS[err.message] ?? "common.error") }),
   });
@@ -85,6 +93,10 @@ export function SlipRegister({ fiscalYearId }: { fiscalYearId: number | null }) 
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <NewButton onClickAction={() => setCreateOpen(true)}>{t("treasury.newDepositSlip")}</NewButton>
+      </div>
+
       {isLoading ? (
         <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
       ) : (
@@ -131,54 +143,65 @@ export function SlipRegister({ fiscalYearId }: { fiscalYearId: number | null }) 
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit((values) => createMutation.mutate(values))}
-        className="flex flex-col gap-3 rounded-md border border-border p-3"
-      >
-        <h2 className="text-sm font-semibold text-foreground">{t("treasury.newDepositSlip")}</h2>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.slipNumber")}</label>
-            <input type="text" {...register("slipNumber")} className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+      <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("treasury.newDepositSlip")}>
+        <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label={t("treasury.slipNumber")}>
+              <input type="text" placeholder="123456" {...register("slipNumber")} className={fieldInputClass} autoFocus />
+            </Field>
+            <Controller
+              name="slipDate"
+              control={control}
+              render={({ field }) => (
+                <DateField label={t("treasury.slipDate")} value={field.value ?? ""} onChangeAction={field.onChange} />
+              )}
+            />
+            <Field label={t("treasury.amount")}>
+              <input type="number" placeholder="5000000" {...register("amount")} className={fieldInputClass} />
+            </Field>
+            <Field label={t("treasury.channel")}>
+              <Controller
+                name="channel"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value ?? ""}
+                    onChangeAction={field.onChange}
+                    className={fieldInputClass}
+                    options={CHANNEL_OPTIONS.map((c) => ({ value: c, label: t(CHANNEL_LABEL[c]) }))}
+                  />
+                )}
+              />
+            </Field>
+            <Field label={t("treasury.description")} wide>
+              <input type="text" placeholder="واریز نقدی به حساب بانک ملت" {...register("description")} className={fieldInputClass} />
+            </Field>
+            <AccountField label={t("treasury.depositor")} value={payerAccountId} onChangeAction={setPayerAccountId} />
+            <AccountField label={t("treasury.bankCode")} value={bankAccountId} onChangeAction={setBankAccountId} />
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.slipDate")}</label>
-            <input type="date" {...register("slipDate")} className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+          {(errors.slipDate || errors.amount || errors.channel || errors.root) && (
+            <p role="alert" className="text-sm text-danger">
+              {errors.root?.message ?? t("common.error")}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+            >
+              {t("treasury.save")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("common.cancel")}
+            </button>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.amount")}</label>
-            <input type="number" {...register("amount")} className="h-9 w-32 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.channel")}</label>
-            <select {...register("channel")} className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent">
-              {CHANNEL_OPTIONS.map((c) => (
-                <option key={c} value={c}>
-                  {t(CHANNEL_LABEL[c])}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.description")}</label>
-            <input type="text" {...register("description")} className="h-9 w-64 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
-          </div>
-          <AccountField label={t("treasury.depositor")} value={payerAccountId} onChangeAction={setPayerAccountId} />
-          <AccountField label={t("treasury.bankCode")} value={bankAccountId} onChangeAction={setBankAccountId} />
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-          >
-            {t("treasury.save")}
-          </button>
-        </div>
-        {(errors.slipDate || errors.amount || errors.channel || errors.root) && (
-          <p role="alert" className="text-sm text-danger">
-            {errors.root?.message ?? t("common.error")}
-          </p>
-        )}
-      </form>
+        </form>
+      </Modal>
     </div>
   );
 }

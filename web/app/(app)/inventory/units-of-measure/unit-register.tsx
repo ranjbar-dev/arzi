@@ -3,13 +3,18 @@
 // Step 5.9: `Anbar_Vahed`'s first-ever maintenance screen (specs/05-inventory §1.3 — "no
 // maintenance screen for it" in the legacy, "must be populated by direct SQL").
 
-import { useForm } from "react-hook-form";
+import { useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
+import { Modal } from "@/components/modal";
+import { NewButton } from "@/components/new-button";
+import { Field, fieldInputClass } from "@/components/form-field";
+import { Select } from "@/components/select";
 import type { UnitOfMeasure } from "@/lib/inventory";
 
 const schema = z.object({
@@ -31,6 +36,7 @@ const ERROR_KEYS: Record<string, string> = {
 export function UnitRegister() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: units, isLoading } = useQuery({
     queryKey: ["units-of-measure"],
@@ -39,6 +45,7 @@ export function UnitRegister() {
 
   const {
     register,
+    control,
     handleSubmit,
     setError,
     reset,
@@ -54,6 +61,7 @@ export function UnitRegister() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["units-of-measure"] });
       reset();
+      setCreateOpen(false);
     },
     onError: (err: ApiError) => setError("root", { message: t(ERROR_KEYS[err.message] ?? "common.error") }),
   });
@@ -62,6 +70,10 @@ export function UnitRegister() {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <NewButton onClickAction={() => setCreateOpen(true)}>{t("inventory.newUnit")}</NewButton>
+      </div>
+
       {isLoading ? (
         <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
       ) : (
@@ -94,54 +106,54 @@ export function UnitRegister() {
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit((values) => createMutation.mutate(values))}
-        className="flex flex-wrap items-end gap-3 rounded-md border border-border p-3"
-      >
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("inventory.unitName")}</label>
-          <input
-            type="text"
-            {...register("name")}
-            className="h-9 w-40 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("inventory.baseUnit")}</label>
-          <select
-            {...register("baseUnitId")}
-            className="h-9 w-40 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <option value="">{t("inventory.none")}</option>
-            {units?.filter((u) => !u.baseUnitId).map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("inventory.conversionFactor")}</label>
-          <input
-            type="number"
-            step="0.000001"
-            {...register("conversionFactor")}
-            className="h-9 w-32 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-        >
-          {t("inventory.newUnit")}
-        </button>
-        {(errors.name || errors.root) && (
-          <p role="alert" className="text-sm text-danger">
-            {errors.root?.message ?? t("common.error")}
-          </p>
-        )}
-      </form>
+      <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("inventory.newUnit")}>
+        <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label={t("inventory.unitName")}>
+              <input type="text" placeholder="کیلوگرم" {...register("name")} className={fieldInputClass} autoFocus />
+            </Field>
+            <Field label={t("inventory.baseUnit")}>
+              <Controller
+                name="baseUnitId"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value ? String(field.value) : ""}
+                    onChangeAction={(v) => field.onChange(v ? Number(v) : undefined)}
+                    placeholder={t("inventory.none")}
+                    className={fieldInputClass}
+                    options={(units ?? []).filter((u) => !u.baseUnitId).map((u) => ({ value: String(u.id), label: u.name }))}
+                  />
+                )}
+              />
+            </Field>
+            <Field label={t("inventory.conversionFactor")}>
+              <input type="number" step="0.000001" placeholder="1000" {...register("conversionFactor")} className={fieldInputClass} />
+            </Field>
+          </div>
+          {(errors.name || errors.root) && (
+            <p role="alert" className="text-sm text-danger">
+              {errors.root?.message ?? t("common.error")}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+            >
+              {t("common.save")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("common.cancel")}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

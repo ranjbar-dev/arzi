@@ -8,10 +8,13 @@
 // the API says is ticked).
 
 import { useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { apiRequest, ApiError } from "@/lib/api-client";
+import { Modal } from "@/components/modal";
+import { Field, fieldInputClass } from "@/components/form-field";
+import { Select } from "@/components/select";
 import type { AccountConfigRow, PartyDetail, PartyType, TaxStatus } from "@/lib/parties";
 
 interface FormValues {
@@ -99,10 +102,12 @@ function toFormValues(p: PartyDetail): FormValues {
 }
 
 export function PartyForm({
+  open,
   kind,
   partyId,
   onCloseAction,
 }: {
+  open: boolean;
   kind: PartyType;
   partyId: number | null;
   onCloseAction: () => void;
@@ -125,6 +130,7 @@ export function PartyForm({
 
   const {
     register,
+    control,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
@@ -180,73 +186,76 @@ export function PartyForm({
   const isPerson = kind !== "legal_entity";
 
   return (
-    <div className="rounded-md border border-border bg-surface p-4">
-      <h2 className="mb-3 text-sm font-medium text-foreground">
-        {isEdit ? t("parties.editParty") : t("parties.newParty")}
-      </h2>
+    <Modal open={open} onCloseAction={onClose} title={isEdit ? t("parties.editParty") : t("parties.newParty")} widthClassName="w-[min(92vw,40rem)]">
       <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Field label={t("parties.cardNumber")}>
             <input
               type="number"
+              placeholder="1001"
               disabled={isEdit}
               {...register("cardNumber", { valueAsNumber: true })}
               className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
             />
           </Field>
           <Field label={isPerson ? t("parties.firstName") : t("parties.entityName")}>
-            <input {...register("firstName")} autoFocus className={inputCls} />
+            <input placeholder={isPerson ? "علی" : "شرکت پگاه پیستاط"} {...register("firstName")} autoFocus className={fieldInputClass} />
           </Field>
           <Field label={isPerson ? t("parties.lastName") : t("parties.representative")}>
-            <input {...register("lastName")} className={inputCls} />
+            <input placeholder={isPerson ? "رضایی" : "محمدی"} {...register("lastName")} className={fieldInputClass} />
           </Field>
           {isPerson && (
             <Field label={t("parties.fatherName")}>
-              <input {...register("fatherName")} className={inputCls} />
+              <input placeholder="محمد" {...register("fatherName")} className={fieldInputClass} />
             </Field>
           )}
           <Field label={t("parties.idCardNumber")}>
-            <input {...register("idCardNumber")} className={inputCls} />
+            <input placeholder="1234567" {...register("idCardNumber")} className={fieldInputClass} />
           </Field>
           <Field label={t("parties.mobile")}>
-            <input {...register("mobile")} className={inputCls} />
+            <input placeholder="09121234567" {...register("mobile")} className={fieldInputClass} />
           </Field>
           <Field label={isPerson ? t("parties.birthDate") : t("parties.incorporationDate")}>
-            <input placeholder="YYYY/MM/DD" {...register("birthDate")} className={inputCls} />
+            <input placeholder="1370/05/12" {...register("birthDate")} className={fieldInputClass} />
           </Field>
           <Field label={t("parties.birthPlace")}>
-            <input {...register("birthPlace")} className={inputCls} />
+            <input placeholder="تهران" {...register("birthPlace")} className={fieldInputClass} />
           </Field>
           {isPerson && (
             <>
               <Field label={t("parties.idIssueDate")}>
-                <input placeholder="YYYY/MM/DD" {...register("idIssueDate")} className={inputCls} />
+                <input placeholder="1390/02/01" {...register("idIssueDate")} className={fieldInputClass} />
               </Field>
               <Field label={t("parties.idIssuePlace")}>
-                <input {...register("idIssuePlace")} className={inputCls} />
+                <input placeholder="تهران" {...register("idIssuePlace")} className={fieldInputClass} />
               </Field>
             </>
           )}
           <Field label={isPerson ? t("parties.nationalId") : t("parties.entityNationalId")}>
-            <input {...register("nationalId")} className={inputCls} />
+            <input placeholder="0012345678" {...register("nationalId")} className={fieldInputClass} />
           </Field>
           <Field label={t("parties.postalCode")}>
-            <input {...register("postalCode")} className={inputCls} />
+            <input placeholder="1234567890" {...register("postalCode")} className={fieldInputClass} />
           </Field>
           <Field label={t("parties.registrationNumber")}>
-            <input {...register("registrationNumber")} className={inputCls} />
+            <input placeholder="12345" {...register("registrationNumber")} className={fieldInputClass} />
           </Field>
           <Field label={t("parties.taxStatus")}>
-            <select {...register("taxStatus")} className={inputCls}>
-              {TAX_STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {t(TAX_STATUS_KEY[s])}
-                </option>
-              ))}
-            </select>
+            <Controller
+              name="taxStatus"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  value={field.value ?? ""}
+                  onChangeAction={field.onChange}
+                  className={fieldInputClass}
+                  options={TAX_STATUS_OPTIONS.map((s) => ({ value: s, label: t(TAX_STATUS_KEY[s]) }))}
+                />
+              )}
+            />
           </Field>
           <Field label={t("parties.address")} wide>
-            <input {...register("address")} className={inputCls} />
+            <input {...register("address")} className={fieldInputClass} />
           </Field>
         </div>
 
@@ -314,18 +323,6 @@ export function PartyForm({
           </button>
         </div>
       </form>
-    </div>
-  );
-}
-
-const inputCls =
-  "h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent";
-
-function Field({ label, wide, children }: { label: string; wide?: boolean; children: React.ReactNode }) {
-  return (
-    <div className={`flex flex-col gap-1 ${wide ? "col-span-2 sm:col-span-3" : ""}`}>
-      <label className="text-sm text-muted-foreground">{label}</label>
-      {children}
-    </div>
+    </Modal>
   );
 }

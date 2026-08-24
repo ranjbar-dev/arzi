@@ -14,6 +14,10 @@ import { useState } from "react";
 import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
 import { AccountField } from "@/components/account-field";
+import { DateField } from "@/components/date-field";
+import { Modal } from "@/components/modal";
+import { NewButton } from "@/components/new-button";
+import { Field, fieldInputClass } from "@/components/form-field";
 import type { ChequeBatchSummary } from "@/lib/treasury";
 
 const schema = z.object({
@@ -51,6 +55,7 @@ export function BatchRegister({ fiscalYearId }: { fiscalYearId: number | null })
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [bankAccountId, setBankAccountId] = useState<number | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: batches, isLoading } = useQuery({
     queryKey: ["cheque-payment-batches", fiscalYearId],
@@ -70,6 +75,7 @@ export function BatchRegister({ fiscalYearId }: { fiscalYearId: number | null })
     defaultValues: { lines: [{ payeeAccountId: 0, amount: undefined, description: "" }] },
   });
   const { fields, append, remove } = useFieldArray({ control, name: "lines" });
+  const { field: issueDateField } = useController({ control, name: "issueDate" });
 
   const createMutation = useMutation({
     mutationFn: (values: FormOutput) => {
@@ -82,6 +88,7 @@ export function BatchRegister({ fiscalYearId }: { fiscalYearId: number | null })
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cheque-payment-batches"] });
       reset({ lines: [{ payeeAccountId: 0, amount: undefined, description: "" }] });
+      setCreateOpen(false);
     },
     onError: (err: ApiError) => setError("root", { message: t(ERROR_KEYS[err.message] ?? "common.error") }),
   });
@@ -97,6 +104,10 @@ export function BatchRegister({ fiscalYearId }: { fiscalYearId: number | null })
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <NewButton onClickAction={() => setCreateOpen(true)}>{t("treasury.newBatch")}</NewButton>
+      </div>
+
       {isLoading ? (
         <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
       ) : (
@@ -143,81 +154,85 @@ export function BatchRegister({ fiscalYearId }: { fiscalYearId: number | null })
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit((values) => createMutation.mutate(values))}
-        className="flex flex-col gap-3 rounded-md border border-border p-3"
-      >
-        <h2 className="text-sm font-semibold text-foreground">{t("treasury.newBatch")}</h2>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.batchNumber")}</label>
-            <input type="text" {...register("batchNumber")} className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+      <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("treasury.newBatch")} widthClassName="w-[min(92vw,40rem)]">
+        <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label={t("treasury.batchNumber")}>
+              <input type="text" placeholder="1" {...register("batchNumber")} className={fieldInputClass} autoFocus />
+            </Field>
+            <DateField label={t("treasury.issueDate")} value={issueDateField.value} onChangeAction={issueDateField.onChange} />
+            <Field label={t("treasury.description")} wide>
+              <input type="text" placeholder="پرداخت دسته چک به تامین‌کنندگان" {...register("description")} className={fieldInputClass} />
+            </Field>
+            <AccountField label={t("treasury.bankAccountCode")} value={bankAccountId} onChangeAction={setBankAccountId} />
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.issueDate")}</label>
-            <input type="date" {...register("issueDate")} className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.description")}</label>
-            <input type="text" {...register("description")} className="h-9 w-64 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
-          </div>
-          <AccountField label={t("treasury.bankAccountCode")} value={bankAccountId} onChangeAction={setBankAccountId} />
-        </div>
 
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-foreground">{t("treasury.payeeLines")}</h3>
-          {fields.map((field, index) => (
-            <div key={field.id} className="flex flex-wrap items-end gap-2 rounded-md border border-border p-2">
-              <PayeeAccountField control={control} index={index} />
-              <div className="flex flex-col gap-1">
-                <label className="text-sm text-muted-foreground">{t("treasury.amount")}</label>
-                <input
-                  type="number"
-                  {...register(`lines.${index}.amount`)}
-                  className="h-9 w-28 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                />
+          <div className="flex flex-col gap-2">
+            <h3 className="text-sm font-medium text-foreground">{t("treasury.payeeLines")}</h3>
+            {fields.map((field, index) => (
+              <div key={field.id} className="flex flex-wrap items-end gap-2 rounded-md border border-border p-2">
+                <PayeeAccountField control={control} index={index} />
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm text-muted-foreground">{t("treasury.amount")}</label>
+                  <input
+                    type="number"
+                    placeholder="5000000"
+                    {...register(`lines.${index}.amount`)}
+                    className="h-9 w-28 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm text-muted-foreground">{t("treasury.description")}</label>
+                  <input
+                    type="text"
+                    placeholder="بابت خرید کالا"
+                    {...register(`lines.${index}.description`)}
+                    className="h-9 w-48 rounded-md border border-border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  />
+                </div>
+                {fields.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => remove(index)}
+                    className="h-9 cursor-pointer rounded-md border border-danger px-3 text-sm text-danger hover:bg-danger/10 focus-visible:ring-2 focus-visible:ring-danger"
+                  >
+                    {t("treasury.removeLine")}
+                  </button>
+                )}
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm text-muted-foreground">{t("treasury.description")}</label>
-                <input
-                  type="text"
-                  {...register(`lines.${index}.description`)}
-                  className="h-9 w-48 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                />
-              </div>
-              {fields.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => remove(index)}
-                  className="h-9 cursor-pointer rounded-md border border-danger px-3 text-sm text-danger hover:bg-danger/10 focus-visible:ring-2 focus-visible:ring-danger"
-                >
-                  {t("treasury.removeLine")}
-                </button>
-              )}
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={() => append({ payeeAccountId: 0, amount: undefined, description: "" })}
-            className="h-9 w-fit cursor-pointer rounded-md border border-border px-3 text-sm text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {t("treasury.addLine")}
-          </button>
-        </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => append({ payeeAccountId: 0, amount: undefined, description: "" })}
+              className="h-9 w-fit cursor-pointer rounded-md border border-border px-3 text-sm text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("treasury.addLine")}
+            </button>
+          </div>
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="h-9 w-fit cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-        >
-          {t("treasury.save")}
-        </button>
-        {(errors.issueDate || errors.description || errors.lines || errors.root) && (
-          <p role="alert" className="text-sm text-danger">
-            {errors.root?.message ?? t("common.error")}
-          </p>
-        )}
-      </form>
+          {(errors.issueDate || errors.description || errors.lines || errors.root) && (
+            <p role="alert" className="text-sm text-danger">
+              {errors.root?.message ?? t("common.error")}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+            >
+              {t("treasury.save")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("common.cancel")}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

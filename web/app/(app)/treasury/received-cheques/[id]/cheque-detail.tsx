@@ -13,7 +13,7 @@
 // real browser, not by `next build`/`tsc`/`eslint`, none of which flag it.
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useController } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,6 +23,7 @@ import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
 import { AccountField } from "@/components/account-field";
 import { AccountLabel } from "@/components/account-label";
+import { DateField } from "@/components/date-field";
 import type { ChequeDetail as ChequeDetailType, ChequeStatus } from "@/lib/treasury";
 
 const STATUS_LABEL: Record<ChequeStatus, string> = {
@@ -63,12 +64,13 @@ function TransitionForm({
   const { t } = useTranslation();
   const [accountId, setAccountId] = useState<number | null>(null);
   const {
-    register,
+    control,
     handleSubmit,
     setError,
     reset,
     formState: { errors },
   } = useForm<TransitionValues>({ resolver: zodResolver(transitionSchema) });
+  const { field: eventDateField } = useController({ control, name: "eventDate" });
 
   const mutation = useMutation({
     mutationFn: (values: TransitionValues) =>
@@ -93,14 +95,11 @@ function TransitionForm({
       className="flex flex-wrap items-end gap-2 rounded-md border border-border p-3"
     >
       <h2 className="w-full text-sm font-semibold text-foreground">{title}</h2>
-      <div className="flex flex-col gap-1">
-        <label className="text-sm text-muted-foreground">{t("treasury.eventDate")}</label>
-        <input
-          type="date"
-          {...register("eventDate")}
-          className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-        />
-      </div>
+      <DateField
+        label={t("treasury.eventDate")}
+        value={eventDateField.value}
+        onChangeAction={eventDateField.onChange}
+      />
       {accountField && <AccountField label={accountField.label} value={accountId} onChangeAction={setAccountId} />}
       <button
         type="submit"

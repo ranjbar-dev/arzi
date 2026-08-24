@@ -7,7 +7,7 @@
 // shows every cheque of every state and every fiscal year, unfiltered.
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useController } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +17,11 @@ import Link from "next/link";
 import { apiRequest, ApiError } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
 import { AccountField } from "@/components/account-field";
+import { DateField } from "@/components/date-field";
+import { Modal } from "@/components/modal";
+import { NewButton } from "@/components/new-button";
+import { Field, fieldInputClass } from "@/components/form-field";
+import { Select } from "@/components/select";
 import type { ChequeStatus, ChequeSummary } from "@/lib/treasury";
 
 const schema = z.object({
@@ -55,6 +60,7 @@ export function ChequeRegister({ fiscalYearId }: { fiscalYearId: number | null }
   const [dueBefore, setDueBefore] = useState("");
   const [payerAccountId, setPayerAccountId] = useState<number | null>(null);
   const [notesAccountId, setNotesAccountId] = useState<number | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const params = new URLSearchParams();
   if (fiscalYearId) params.set("fiscalYearId", String(fiscalYearId));
@@ -69,11 +75,14 @@ export function ChequeRegister({ fiscalYearId }: { fiscalYearId: number | null }
 
   const {
     register,
+    control,
     handleSubmit,
     setError,
     reset,
     formState: { errors, isSubmitting },
   } = useForm<FormValues, unknown, FormOutput>({ resolver: zodResolver(schema) });
+  const { field: receivedOnField } = useController({ control, name: "receivedOn" });
+  const { field: dueDateField } = useController({ control, name: "dueDate" });
 
   const receiveMutation = useMutation({
     mutationFn: (values: FormOutput) => {
@@ -93,6 +102,7 @@ export function ChequeRegister({ fiscalYearId }: { fiscalYearId: number | null }
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["received-cheques"] });
       reset();
+      setCreateOpen(false);
       router.push(`/treasury/received-cheques/${result.id}`);
     },
     onError: (err: ApiError) => {
@@ -106,31 +116,21 @@ export function ChequeRegister({ fiscalYearId }: { fiscalYearId: number | null }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("treasury.status")}</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as ChequeStatus | "")}
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <option value="">{t("treasury.allStatuses")}</option>
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {t(STATUS_LABEL[s])}
-              </option>
-            ))}
-          </select>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-sm text-muted-foreground">{t("treasury.status")}</label>
+            <Select
+              value={statusFilter}
+              onChangeAction={(v) => setStatusFilter(v as ChequeStatus | "")}
+              placeholder={t("treasury.allStatuses")}
+              className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              options={STATUS_OPTIONS.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
+            />
+          </div>
+          <DateField label={t("treasury.agingAsOf")} value={dueBefore} onChangeAction={setDueBefore} />
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm text-muted-foreground">{t("treasury.agingAsOf")}</label>
-          <input
-            type="date"
-            value={dueBefore}
-            onChange={(e) => setDueBefore(e.target.value)}
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          />
-        </div>
+        <NewButton onClickAction={() => setCreateOpen(true)}>{t("treasury.receiveNewCheque")}</NewButton>
       </div>
 
       {isLoading ? (
@@ -150,7 +150,11 @@ export function ChequeRegister({ fiscalYearId }: { fiscalYearId: number | null }
             </thead>
             <tbody>
               {cheques?.map((c) => (
-                <tr key={c.id} className="border-b border-border last:border-0 hover:bg-muted">
+                <tr
+                  key={c.id}
+                  onClick={() => router.push(`/treasury/received-cheques/${c.id}`)}
+                  className="cursor-pointer border-b border-border last:border-0 hover:bg-muted"
+                >
                   <td className="px-3 py-2 text-muted-foreground">{t(STATUS_LABEL[c.status])}</td>
                   <td className="px-3 py-2">
                     <Link
@@ -178,68 +182,46 @@ export function ChequeRegister({ fiscalYearId }: { fiscalYearId: number | null }
         </div>
       )}
 
-      <form
-        onSubmit={handleSubmit((values) => receiveMutation.mutate(values))}
-        className="flex flex-col gap-3 rounded-md border border-border p-3"
-      >
-        <h2 className="text-sm font-semibold text-foreground">{t("treasury.receiveNewCheque")}</h2>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.chequeNumber")}</label>
-            <input
-              type="text"
-              {...register("chequeNumber")}
-              className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
+      <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("treasury.receiveNewCheque")}>
+        <form onSubmit={handleSubmit((values) => receiveMutation.mutate(values))} className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label={t("treasury.chequeNumber")}>
+              <input type="text" placeholder="123456" {...register("chequeNumber")} className={fieldInputClass} autoFocus />
+            </Field>
+            <DateField label={t("treasury.receivedOn")} value={receivedOnField.value ?? ""} onChangeAction={receivedOnField.onChange} />
+            <DateField label={t("treasury.dueDate")} value={dueDateField.value ?? ""} onChangeAction={dueDateField.onChange} />
+            <Field label={t("treasury.amount")}>
+              <input type="number" placeholder="5000000" {...register("amount")} className={fieldInputClass} />
+            </Field>
+            <Field label={t("treasury.description")} wide>
+              <input type="text" placeholder="چک دریافتی بابت فروش پسته" {...register("description")} className={fieldInputClass} />
+            </Field>
+            <AccountField label={t("treasury.payer")} value={payerAccountId} onChangeAction={setPayerAccountId} />
+            <AccountField label={t("treasury.notesReceivableAccount")} value={notesAccountId} onChangeAction={setNotesAccountId} />
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.receivedOn")}</label>
-            <input
-              type="date"
-              {...register("receivedOn")}
-              className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
+          {(errors.chequeNumber || errors.receivedOn || errors.dueDate || errors.amount || errors.description || errors.root) && (
+            <p role="alert" className="text-sm text-danger">
+              {errors.root?.message ?? t("common.error")}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+            >
+              {t("treasury.save")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(false)}
+              className="h-9 cursor-pointer rounded-md px-4 text-sm text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              {t("common.cancel")}
+            </button>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.dueDate")}</label>
-            <input
-              type="date"
-              {...register("dueDate")}
-              className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.amount")}</label>
-            <input
-              type="number"
-              {...register("amount")}
-              className="h-9 w-32 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.description")}</label>
-            <input
-              type="text"
-              {...register("description")}
-              className="h-9 w-64 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            />
-          </div>
-          <AccountField label={t("treasury.payer")} value={payerAccountId} onChangeAction={setPayerAccountId} />
-          <AccountField label={t("treasury.notesReceivableAccount")} value={notesAccountId} onChangeAction={setNotesAccountId} />
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="h-9 cursor-pointer rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-          >
-            {t("treasury.save")}
-          </button>
-        </div>
-        {(errors.chequeNumber || errors.receivedOn || errors.dueDate || errors.amount || errors.description || errors.root) && (
-          <p role="alert" className="text-sm text-danger">
-            {errors.root?.message ?? t("common.error")}
-          </p>
-        )}
-      </form>
+        </form>
+      </Modal>
     </div>
   );
 }
