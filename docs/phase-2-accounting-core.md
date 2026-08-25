@@ -201,54 +201,6 @@ vouchers — built once here, wired to real callers in Phases 4–5.
 
 ---
 
-## 2.6 Journal (Rooznameh) generation
-
-**Goal:** roll a range of permanently-posted vouchers up to Kol level into a journal voucher, and
-make the general ledger actually show data (fixes B6).
-
-**Build**
-
-- Range selection by voucher-number or by date, target voucher number/date/narration — same inputs
-  as `MoeinToRU.pas` (`03-08.md` §8.1).
-- Validations from `03-08.md` §8.1's table: range required and ordered, target date required and
-  inside the fiscal year, target number required and not duplicate, narration required
-  (`Length(Trim) > 3`), range must contain vouchers, and the key rule — **every voucher in the range
-  must already be permanently posted (`status = 2`)** before it can be journalised.
-- **Fix the legacy's re-run hazard**: the source predicate must exclude vouchers that are themselves
-  journal vouchers (`voucher_kind = 2`) — the legacy generator's range query "does not filter on
-  `M_Kind`" and can summarise a previously-generated journal voucher again (`03-08.md` §8.1 note).
-  Also record, on each source voucher, that it has been journalised (a `journalised_at` timestamp or
-  similar) so **re-running an overlapping range does not silently double-count** — the legacy has "no
-  protection" against this beyond the target-number duplicate check; this is a decided fix, not
-  optional.
-- Generation logic: group by Kol, one debit line and one credit line per Kol with nonzero turnover
-  (gross, not net — matching `03-08.md` §8.1's "What it produces"), `voucher_kind = 2`, resolved
-  `account_id` at Kol level.
-- **B6 fix**: the general ledger (Phase 6, step 6.2) must read posted (`status = 2`) voucher lines
-  directly — it must not depend on someone having run this journal-generation step first. Journal
-  generation is a *summary* document, not a prerequisite for the ledger to show data. Confirm this
-  when building 6.2.
-
-**Spec refs:** `03-08-journal-rooznameh-generation.md` §8.1, §8.3; B6 in `11-open-decisions.md`.
-
-**Manual test**
-
-1. Issue and permanently-post three vouchers touching two different Kol accounts.
-2. Run journal generation over their date range → succeeds, produces one journal voucher with
-   correct gross debit/credit lines per Kol.
-3. Attempt to run it again over an overlapping range → either rejected or demonstrably does not
-   double-count (confirm which behaviour was implemented and that it matches "fix, don't replicate").
-4. Include a still-draft voucher in the range → rejected with the "must be permanently posted" message.
-5. `RooznamehViewU` equivalent screen: list journal vouchers, change date/number/narration, lock,
-   delete a draft one — confirm delete is blocked once posted or locked, matching `03-08.md` §8.3's
-   guard table.
-
-**Done when:** journal generation can't be re-run over the same data to inflate figures, and it is
-proven **not** to be a prerequisite for the general ledger (test 6.2 against un-journalised posted
-vouchers once that step exists).
-
----
-
 ## 2.7 Period close / year-end
 
 **Goal:** `NewFinalu` (close income-statement accounts to a summary account) then `EnteghalU`

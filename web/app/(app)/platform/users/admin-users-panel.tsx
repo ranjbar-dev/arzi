@@ -11,6 +11,7 @@ import { toPersianDigits } from "@/lib/format";
 import { Modal } from "@/components/modal";
 import { NewButton } from "@/components/new-button";
 import { Field, fieldInputClass } from "@/components/form-field";
+import { DataTable, FilterInput, useDebounced, useSort } from "@/components/data-table";
 
 interface UserRow {
   id: number;
@@ -38,10 +39,20 @@ export function AdminUsersPanel() {
   const [editingPermissionsFor, setEditingPermissionsFor] = useState<number | null>(null);
   const [settingPasswordFor, setSettingPasswordFor] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [usernameFilter, setUsernameFilter] = useState("");
+  const debouncedUsername = useDebounced(usernameFilter);
+  const { sort, toggleSort } = useSort();
+
+  const params = new URLSearchParams();
+  if (debouncedUsername) params.set("username", debouncedUsername);
+  if (sort) {
+    params.set("sort", sort.field);
+    params.set("order", sort.dir);
+  }
 
   const { data: users, isLoading } = useQuery({
-    queryKey: ["admin", "users"],
-    queryFn: () => apiRequest<UserRow[]>("/api/v1/admin/users"),
+    queryKey: ["admin", "users", debouncedUsername, sort],
+    queryFn: () => apiRequest<UserRow[]>(`/api/v1/admin/users?${params.toString()}`),
   });
 
   const invalidateUsers = () => queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
@@ -82,62 +93,70 @@ export function AdminUsersPanel() {
         <NewButton onClickAction={() => setCreateOpen(true)}>{t("admin.createUser")}</NewButton>
       </div>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50 text-muted-foreground">
-                <th className="px-3 py-2 text-start font-medium">{t("auth.username")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("common.active")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("shell.superuser")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("common.actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users?.map((u) => (
-                <tr key={u.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 text-foreground">{u.username}</td>
-                  <td className="px-3 py-2">
-                    {u.isActive ? (
-                      <span className="text-success">{t("common.active")}</span>
-                    ) : (
-                      <span className="text-muted-foreground">{t("common.inactive")}</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{u.isSuperuser ? t("common.yes") : t("common.no")}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleActiveMutation.mutate({ id: u.id, enable: !u.isActive })}
-                        className="cursor-pointer text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
-                      >
-                        {u.isActive ? t("admin.disableUser") : t("admin.enableUser")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSettingPasswordFor(u.id)}
-                        className="cursor-pointer text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
-                      >
-                        {t("admin.setPassword")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingPermissionsFor(u.id)}
-                        className="cursor-pointer text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
-                      >
-                        {t("admin.permissions")}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<UserRow>
+        columns={[
+          {
+            key: "username",
+            header: t("auth.username"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={usernameFilter} onChangeAction={setUsernameFilter} />,
+            render: (u) => u.username,
+          },
+          {
+            key: "isActive",
+            header: t("common.active"),
+            sortable: true,
+            render: (u) =>
+              u.isActive ? (
+                <span className="text-success">{t("common.active")}</span>
+              ) : (
+                <span className="text-muted-foreground">{t("common.inactive")}</span>
+              ),
+          },
+          {
+            key: "isSuperuser",
+            header: t("shell.superuser"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            render: (u) => (u.isSuperuser ? t("common.yes") : t("common.no")),
+          },
+          {
+            key: "actions",
+            header: t("common.actions"),
+            render: (u) => (
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => toggleActiveMutation.mutate({ id: u.id, enable: !u.isActive })}
+                  className="cursor-pointer text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  {u.isActive ? t("admin.disableUser") : t("admin.enableUser")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingPasswordFor(u.id)}
+                  className="cursor-pointer text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  {t("admin.setPassword")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingPermissionsFor(u.id)}
+                  className="cursor-pointer text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  {t("admin.permissions")}
+                </button>
+              </div>
+            ),
+          },
+        ]}
+        rows={users}
+        isLoading={isLoading}
+        rowKeyAction={(u) => u.id}
+        sort={sort}
+        onSortAction={toggleSort}
+      />
 
       <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("admin.createUser")}>
         <form onSubmit={handleCreateSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">

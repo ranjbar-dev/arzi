@@ -116,21 +116,6 @@ the rebuild.**
 | 1144 | قفل سند | Lock voucher | `SanadViewU.pas:757` |
 | 1145 | برگشت از ثبت دائم | Reverse permanent posting | `SanadViewU.pas:752` |
 
-**Group `sRollOutPanel8` — اسناد روزنامه (Journal vouchers):**
-
-| ID | Persian caption | English | Enforced at |
-|---|---|---|---|
-| 1132 | اسناد روزنامه | Journal vouchers (group) | `Mainu.pas:925` |
-| 1133 | ثبت سند روزنامه | Record journal voucher | `RooznamehViewU.pas:125` |
-| 1134 | حذف سند روزنامه | Delete journal voucher | `RooznamehViewU.pas:126` |
-| 1135 | تغییر تاریخ سند روزنامه | Change journal voucher date | `RooznamehViewU.pas:127` |
-| 1136 | تغییر شماره سند روزنامه | Change journal voucher number | `RooznamehViewU.pas:128` |
-| 1137 | تغییر شرح سند روزنامه | Change journal voucher narration | `RooznamehViewU.pas:129` |
-| 1138 | تغییر وضعیت سند | Change voucher state | `RooznamehViewU.pas:130` — **button has no handler** |
-| 1139 | قفل سند روزنامه | Lock journal voucher | `RooznamehViewU.pas:131` |
-| 1140 | چاپ سند روزنامه | Print journal voucher | `RooznamehViewU.pas:132` |
-| 1130 | تبدیل اسناد معین به روزنامه | Convert subsidiary vouchers to journal | **defined, never checked** |
-
 **Group `sRollOutPanel5` — کزارش حسابداري (Accounting reports):**
 
 | ID | Persian caption | English | Enforced at |
@@ -170,7 +155,6 @@ Recorded so the rebuild can decide deliberately rather than by omission:
 | Voucher-line search | `MoeinSearchU` | nothing |
 | Balance export to `.GGS` | `BastanHesab` | nothing |
 | `.GGS` import into a voucher | `SanadMoeinu.InFileClick` | nothing |
-| Legacy journal generation | `MakeRooznamehU` | nothing |
 
 ### 13.4 Hard-coded identities
 

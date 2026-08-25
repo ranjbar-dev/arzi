@@ -20,6 +20,7 @@ import { Select } from "@/components/select";
 import { Modal } from "@/components/modal";
 import { NewButton } from "@/components/new-button";
 import { Field } from "@/components/form-field";
+import { DataTable, FilterInput, filterSelectClass, useDebounced, useSort } from "@/components/data-table";
 import type { InventoryDocument, InventoryDocumentStatus, InventoryDocumentType, Warehouse } from "@/lib/inventory";
 import { COMMERCIAL_TYPES, DOCUMENT_TYPE_LABEL, STATUS_LABEL } from "@/lib/inventory";
 
@@ -50,10 +51,13 @@ export function InvoiceList({ fiscalYearId }: { fiscalYearId: number | null }) {
   const queryClient = useQueryClient();
   const [typeFilter, setTypeFilter] = useState<InventoryDocumentType | "">("");
   const [statusFilter, setStatusFilter] = useState<InventoryDocumentStatus | "">("");
+  const [numberFilter, setNumberFilter] = useState("");
   const [warehouseId, setWarehouseId] = useState<number | null>(null);
   const [destinationWarehouseId, setDestinationWarehouseId] = useState<number | null>(null);
   const [counterpartyId, setCounterpartyId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const debouncedNumber = useDebounced(numberFilter);
+  const { sort, toggleSort } = useSort();
 
   const { data: warehouses } = useQuery({
     queryKey: ["warehouses"],
@@ -64,9 +68,14 @@ export function InvoiceList({ fiscalYearId }: { fiscalYearId: number | null }) {
   if (fiscalYearId) params.set("fiscalYearId", String(fiscalYearId));
   if (typeFilter) params.set("documentType", typeFilter);
   if (statusFilter) params.set("status", statusFilter);
+  if (debouncedNumber) params.set("documentNumber", debouncedNumber);
+  if (sort) {
+    params.set("sort", sort.field);
+    params.set("order", sort.dir);
+  }
 
   const { data: documents, isLoading } = useQuery({
-    queryKey: ["inventory-documents", fiscalYearId, typeFilter, statusFilter],
+    queryKey: ["inventory-documents", fiscalYearId, typeFilter, statusFilter, debouncedNumber, sort],
     queryFn: () => apiRequest<InventoryDocument[]>(`/api/v1/inventory-documents?${params.toString()}`),
     enabled: fiscalYearId !== null,
   });
@@ -112,78 +121,80 @@ export function InvoiceList({ fiscalYearId }: { fiscalYearId: number | null }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("inventory.documentType")}</label>
-            <Select
-              value={typeFilter}
-              onChangeAction={(v) => setTypeFilter(v as InventoryDocumentType | "")}
-              placeholder={t("inventory.allTypes")}
-              className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              options={ALL_TYPES.map((ty) => ({ value: ty, label: t(DOCUMENT_TYPE_LABEL[ty]) }))}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.status")}</label>
-            <Select
-              value={statusFilter}
-              onChangeAction={(v) => setStatusFilter(v as InventoryDocumentStatus | "")}
-              placeholder={t("treasury.allStatuses")}
-              className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              options={ALL_STATUSES.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
-            />
-          </div>
-        </div>
+      <div className="flex justify-end">
         <NewButton onClickAction={() => setCreateOpen(true)}>{t("inventory.newInvoice")}</NewButton>
       </div>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50 text-muted-foreground">
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.invoiceNumber")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.invoiceDate")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.documentType")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.status")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.total")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {documents?.map((d) => (
-                <tr
-                  key={d.id}
-                  onClick={() => router.push(`/inventory/invoices/${d.id}`)}
-                  className="cursor-pointer border-b border-border last:border-0 hover:bg-muted"
-                >
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`/inventory/invoices/${d.id}`}
-                      className="text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      {toPersianDigits(d.documentNumber)}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{d.documentDate}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{t(DOCUMENT_TYPE_LABEL[d.documentType])}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{t(STATUS_LABEL[d.status])}</td>
-                  <td className="tabular-nums px-3 py-2 text-foreground">{toPersianDigits(d.totalAmount)}</td>
-                </tr>
-              ))}
-              {documents?.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    —
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<InventoryDocument>
+        columns={[
+          {
+            key: "documentNumber",
+            header: t("inventory.invoiceNumber"),
+            sortable: true,
+            filter: <FilterInput value={numberFilter} onChangeAction={setNumberFilter} />,
+            render: (d) => (
+              <Link
+                href={`/inventory/invoices/${d.id}`}
+                className="text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {toPersianDigits(d.documentNumber)}
+              </Link>
+            ),
+          },
+          {
+            key: "documentDate",
+            header: t("inventory.invoiceDate"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            render: (d) => d.documentDate,
+          },
+          {
+            key: "documentType",
+            header: t("inventory.documentType"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            filter: (
+              <Select
+                value={typeFilter}
+                onChangeAction={(v) => setTypeFilter(v as InventoryDocumentType | "")}
+                placeholder={t("inventory.allTypes")}
+                className={filterSelectClass}
+                options={ALL_TYPES.map((ty) => ({ value: ty, label: t(DOCUMENT_TYPE_LABEL[ty]) }))}
+              />
+            ),
+            render: (d) => t(DOCUMENT_TYPE_LABEL[d.documentType]),
+          },
+          {
+            key: "status",
+            header: t("treasury.status"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            filter: (
+              <Select
+                value={statusFilter}
+                onChangeAction={(v) => setStatusFilter(v as InventoryDocumentStatus | "")}
+                placeholder={t("treasury.allStatuses")}
+                className={filterSelectClass}
+                options={ALL_STATUSES.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
+              />
+            ),
+            render: (d) => t(STATUS_LABEL[d.status]),
+          },
+          {
+            key: "totalAmount",
+            header: t("inventory.total"),
+            sortable: true,
+            tdClassName: "tabular-nums text-foreground",
+            render: (d) => toPersianDigits(d.totalAmount),
+          },
+        ]}
+        rows={documents}
+        isLoading={isLoading}
+        rowKeyAction={(d) => d.id}
+        sort={sort}
+        onSortAction={toggleSort}
+        onRowClickAction={(d) => router.push(`/inventory/invoices/${d.id}`)}
+      />
 
       <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("inventory.newInvoice")}>
         <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">

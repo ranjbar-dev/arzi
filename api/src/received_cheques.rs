@@ -778,7 +778,20 @@ struct ListQuery {
     /// the legacy where this filter exists in the query but is unreachable
     /// from the UI at all (§5.5) — here it's a real, wired parameter.
     due_before: Option<NaiveDate>,
+    cheque_number: Option<String>,
+    description: Option<String>,
+    sort: Option<String>,
+    order: Option<String>,
 }
+
+const CHEQUE_SORT_COLUMNS: &[(&str, &str)] = &[
+    ("status", "status::text"),
+    ("chequeNumber", "cheque_number"),
+    ("receivedOn", "received_on"),
+    ("dueDate", "due_date"),
+    ("amount", "amount"),
+    ("description", "description"),
+];
 
 async fn list_cheques(
     State(state): State<AppState>,
@@ -794,12 +807,17 @@ async fn list_cheques(
          AND ($2::bigint IS NULL OR fiscal_year_id = $2) \
          AND ($3::text IS NULL OR status = $3::cheque_status) \
          AND ($4::date IS NULL OR (due_date <= $4 AND status IN ('in_hand', 'at_bank', 'bounced'))) \
-         ORDER BY due_date"
+         AND ($5::text IS NULL OR cheque_number ILIKE '%' || $5 || '%') \
+         AND ($6::text IS NULL OR description ILIKE '%' || $6 || '%') \
+         ORDER BY {}",
+        crate::sort::order_by(params.sort.as_deref(), params.order.as_deref(), CHEQUE_SORT_COLUMNS, "due_date"),
     ))
     .bind(auth.tenant_id)
     .bind(params.fiscal_year_id)
     .bind(&params.status)
     .bind(params.due_before)
+    .bind(&params.cheque_number)
+    .bind(&params.description)
     .fetch_all(&mut *tx)
     .await
     .map_err(|_| internal_error())?;

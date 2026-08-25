@@ -183,7 +183,7 @@ Known role ids (§2.4): `13` → `notes_payable` (`اسناد پرداختنی`)
 |---|---|---|---|---|
 | `M_SSN` | `id` | | `M_Code` | `account_id` |
 | `M_COID` | `fiscal_year_id` | | `M_Tx` | `status` |
-| `M_Sanad` | `voucher_number` (→ `voucher_id`) | | `M_Kind` | `journal_kind` |
+| `M_Sanad` | `voucher_number` (→ `voucher_id`) | | `M_Kind` | *(dropped)* |
 | `M_Date` | `line_date` | | `M_ID` | `source_module` |
 | `M_Bed` | `debit_amount` | | `M_Link` | `source_id` |
 | `M_Bes` | `credit_amount` | | `M_User` | `created_by` |
@@ -212,7 +212,7 @@ Known role ids (§2.4): `13` → `notes_payable` (`اسناد پرداختنی`)
 
 | Legacy | Proposed | | Legacy | Proposed |
 |---|---|---|---|---|
-| `DM_SSN` | `id` | | `DM_Kind` | `journal_kind` |
+| `DM_SSN` | `id` | | `DM_Kind` | *(dropped)* |
 | `DM_Coid` | `fiscal_year_id` | | `DM_Lock` | `is_locked` |
 | `DM_Sanad` | `voucher_number` | | `DM_Atf` | `cross_reference` **?** (§12.10) |
 | `DM_Date` | `voucher_date` | | `DM_CUser` | `updated_by` **?** — C/M are **swapped** (§2.8) |
@@ -223,8 +223,8 @@ Known role ids (§2.4): `13` → `notes_payable` (`اسناد پرداختنی`)
 | `DM_Tx` | `status` | | | |
 
 `M_Tx` / `DM_Tx` → `voucher_status`: `0` → `draft` (`موقت`), `1` → `confirmed` (`تأیید شده`),
-`2` → `posted` (`ثبت قطعی`). `M_Kind` / `DM_Kind` → `journal_kind`: `1` → `ledger` (`معین`),
-`2` → `daybook` (`روزنامه`).
+`2` → `posted` (`ثبت قطعی`). `M_Kind` / `DM_Kind` dropped — journal (Rooznameh) generation was never
+built, so every row is always `1` (`معین`).
 
 
 ---

@@ -14,6 +14,7 @@ import { apiRequest } from "@/lib/api-client";
 import { toPersianDigits } from "@/lib/format";
 import type { PartySummary, PartyType } from "@/lib/parties";
 import { LockIcon } from "@/components/lock-icon";
+import { DataTable, FilterInput, useDebounced, useSort } from "@/components/data-table";
 import { PartyForm } from "./party-form";
 
 export function PartyRegister({ canLock }: { canLock: boolean }) {
@@ -21,10 +22,32 @@ export function PartyRegister({ canLock }: { canLock: boolean }) {
   const queryClient = useQueryClient();
   const [kind, setKind] = useState<PartyType>("natural_person");
   const [dialog, setDialog] = useState<"create" | number | null>(null);
+  const [cardNumberFilter, setCardNumberFilter] = useState("");
+  const [firstNameFilter, setFirstNameFilter] = useState("");
+  const [lastNameFilter, setLastNameFilter] = useState("");
+  const [nationalIdFilter, setNationalIdFilter] = useState("");
+  const [mobileFilter, setMobileFilter] = useState("");
+  const debouncedCardNumber = useDebounced(cardNumberFilter);
+  const debouncedFirstName = useDebounced(firstNameFilter);
+  const debouncedLastName = useDebounced(lastNameFilter);
+  const debouncedNationalId = useDebounced(nationalIdFilter);
+  const debouncedMobile = useDebounced(mobileFilter);
+  const { sort, toggleSort } = useSort();
+
+  const params = new URLSearchParams({ kind });
+  if (debouncedCardNumber) params.set("cardNumber", debouncedCardNumber);
+  if (debouncedFirstName) params.set("firstName", debouncedFirstName);
+  if (debouncedLastName) params.set("lastName", debouncedLastName);
+  if (debouncedNationalId) params.set("nationalId", debouncedNationalId);
+  if (debouncedMobile) params.set("mobile", debouncedMobile);
+  if (sort) {
+    params.set("sort", sort.field);
+    params.set("order", sort.dir);
+  }
 
   const { data: parties, isLoading } = useQuery({
-    queryKey: ["parties", "list", kind],
-    queryFn: () => apiRequest<PartySummary[]>(`/api/v1/parties?kind=${kind}`),
+    queryKey: ["parties", "list", kind, debouncedCardNumber, debouncedFirstName, debouncedLastName, debouncedNationalId, debouncedMobile, sort],
+    queryFn: () => apiRequest<PartySummary[]>(`/api/v1/parties?${params.toString()}`),
   });
 
   const lockMutation = useMutation({
@@ -63,72 +86,86 @@ export function PartyRegister({ canLock }: { canLock: boolean }) {
         </button>
       </div>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50 text-muted-foreground">
-                <th className="px-3 py-2 text-center font-medium">{t("parties.cardNumber")}</th>
-                <th className="px-3 py-2 text-start font-medium">
-                  {isPerson ? t("parties.firstName") : t("parties.entityName")}
-                </th>
-                <th className="px-3 py-2 text-start font-medium">
-                  {isPerson ? t("parties.lastName") : t("parties.representative")}
-                </th>
-                <th className="px-3 py-2 text-start font-medium">
-                  {isPerson ? t("parties.nationalId") : t("parties.entityNationalId")}
-                </th>
-                <th className="px-3 py-2 text-start font-medium">{t("parties.mobile")}</th>
-                <th className="w-16 px-3 py-2 text-center font-medium">{t("parties.lock")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parties?.map((p) => (
-                <tr key={p.id} className="border-b border-border last:border-0 hover:bg-muted">
-                  <td className="tabular-nums px-3 py-2 text-center">
-                    <Link href={`/parties/${p.id}`} className="text-accent hover:underline">
-                      {toPersianDigits(p.cardNumber)}
-                    </Link>
-                  </td>
-                  <td
-                    className="cursor-pointer px-3 py-2 text-foreground"
-                    onClick={() => setDialog(p.id)}
-                  >
-                    {p.firstName}
-                  </td>
-                  <td className="cursor-pointer px-3 py-2 text-foreground" onClick={() => setDialog(p.id)}>
-                    {p.lastName}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{p.nationalId ?? "—"}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{p.mobile ?? "—"}</td>
-                  <td className="px-3 py-2 text-center">
-                    {canLock ? (
-                      <button
-                        type="button"
-                        onClick={() => lockMutation.mutate({ id: p.id, lock: !p.isLocked })}
-                        className="cursor-pointer focus-visible:ring-2 focus-visible:ring-accent"
-                      >
-                        <LockIcon locked={p.isLocked} className="mx-auto h-4 w-4 text-warning" />
-                      </button>
-                    ) : (
-                      p.isLocked && <LockIcon locked className="mx-auto h-4 w-4 text-warning" />
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {parties?.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    —
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<PartySummary>
+        columns={[
+          {
+            key: "cardNumber",
+            header: t("parties.cardNumber"),
+            sortable: true,
+            thClassName: "text-center",
+            tdClassName: "tabular-nums text-center",
+            filter: <FilterInput value={cardNumberFilter} onChangeAction={setCardNumberFilter} />,
+            render: (p) => (
+              <Link href={`/parties/${p.id}`} className="text-accent hover:underline">
+                {toPersianDigits(p.cardNumber)}
+              </Link>
+            ),
+          },
+          {
+            key: "firstName",
+            header: isPerson ? t("parties.firstName") : t("parties.entityName"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={firstNameFilter} onChangeAction={setFirstNameFilter} />,
+            render: (p) => (
+              <span className="block cursor-pointer" onClick={() => setDialog(p.id)}>
+                {p.firstName}
+              </span>
+            ),
+          },
+          {
+            key: "lastName",
+            header: isPerson ? t("parties.lastName") : t("parties.representative"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={lastNameFilter} onChangeAction={setLastNameFilter} />,
+            render: (p) => (
+              <span className="block cursor-pointer" onClick={() => setDialog(p.id)}>
+                {p.lastName}
+              </span>
+            ),
+          },
+          {
+            key: "nationalId",
+            header: isPerson ? t("parties.nationalId") : t("parties.entityNationalId"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            filter: <FilterInput value={nationalIdFilter} onChangeAction={setNationalIdFilter} />,
+            render: (p) => p.nationalId ?? "—",
+          },
+          {
+            key: "mobile",
+            header: t("parties.mobile"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            filter: <FilterInput value={mobileFilter} onChangeAction={setMobileFilter} />,
+            render: (p) => p.mobile ?? "—",
+          },
+          {
+            key: "lock",
+            header: t("parties.lock"),
+            thClassName: "w-16 text-center",
+            tdClassName: "text-center",
+            render: (p) =>
+              canLock ? (
+                <button
+                  type="button"
+                  onClick={() => lockMutation.mutate({ id: p.id, lock: !p.isLocked })}
+                  className="cursor-pointer focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  <LockIcon locked={p.isLocked} className="mx-auto h-4 w-4 text-warning" />
+                </button>
+              ) : (
+                p.isLocked && <LockIcon locked className="mx-auto h-4 w-4 text-warning" />
+              ),
+          },
+        ]}
+        rows={parties}
+        isLoading={isLoading}
+        rowKeyAction={(p) => p.id}
+        sort={sort}
+        onSortAction={toggleSort}
+      />
 
       <PartyForm
         open={dialog !== null}

@@ -213,4 +213,4 @@ source accounts net to zero, so `Delete #R Where Bes - Bed = 0` empties the cand
 
 ---
 
-_Prev: [03-08-journal-rooznameh-generation](03-08-journal-rooznameh-generation.md) | Next: [03-09-b-period-close-and-year-end](03-09-b-period-close-and-year-end.md)_
+_Prev: [03-07-merging-vouchers-mergesanad-pas](03-07-merging-vouchers-mergesanad-pas.md) | Next: [03-09-b-period-close-and-year-end](03-09-b-period-close-and-year-end.md)_

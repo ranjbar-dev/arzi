@@ -17,6 +17,7 @@ import { Modal } from "@/components/modal";
 import { NewButton } from "@/components/new-button";
 import { Field, fieldInputClass } from "@/components/form-field";
 import { Select } from "@/components/select";
+import { DataTable, FilterInput, filterSelectClass, useDebounced, useSort } from "@/components/data-table";
 import type { Item, PistachioGrade, UnitOfMeasure, Warehouse } from "@/lib/inventory";
 
 const schema = z.object({
@@ -46,10 +47,22 @@ export function ItemRegister() {
   const queryClient = useQueryClient();
   const [warehouseIds, setWarehouseIds] = useState<number[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [nameFilter, setNameFilter] = useState("");
+  const [unitFilter, setUnitFilter] = useState("");
+  const debouncedName = useDebounced(nameFilter);
+  const { sort, toggleSort } = useSort();
+
+  const params = new URLSearchParams();
+  if (debouncedName) params.set("search", debouncedName);
+  if (unitFilter) params.set("unitOfMeasureId", unitFilter);
+  if (sort) {
+    params.set("sort", sort.field);
+    params.set("order", sort.dir);
+  }
 
   const { data: items, isLoading } = useQuery({
-    queryKey: ["items"],
-    queryFn: () => apiRequest<Item[]>("/api/v1/items"),
+    queryKey: ["items", debouncedName, unitFilter, sort],
+    queryFn: () => apiRequest<Item[]>(`/api/v1/items?${params.toString()}`),
   });
   const { data: units } = useQuery({
     queryKey: ["units-of-measure"],
@@ -96,41 +109,59 @@ export function ItemRegister() {
         <NewButton onClickAction={() => setCreateOpen(true)}>{t("inventory.newItem")}</NewButton>
       </div>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50 text-muted-foreground">
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.itemCode")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.itemName")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.unitOfMeasure")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.salePrice")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.minStock")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items?.map((i) => (
-                <tr key={i.id} className="border-b border-border last:border-0 hover:bg-muted">
-                  <td className="tabular-nums px-3 py-2 text-muted-foreground">{toPersianDigits(i.code)}</td>
-                  <td className="px-3 py-2 text-foreground">{i.name}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{unitName(i.unitOfMeasureId)}</td>
-                  <td className="tabular-nums px-3 py-2 text-foreground">{toPersianDigits(i.salePrice)}</td>
-                  <td className="tabular-nums px-3 py-2 text-muted-foreground">{toPersianDigits(i.minStock)}</td>
-                </tr>
-              ))}
-              {items?.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    —
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<Item>
+        columns={[
+          {
+            key: "code",
+            header: t("inventory.itemCode"),
+            sortable: true,
+            tdClassName: "tabular-nums text-muted-foreground",
+            render: (i) => toPersianDigits(i.code),
+          },
+          {
+            key: "name",
+            header: t("inventory.itemName"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={nameFilter} onChangeAction={setNameFilter} />,
+            render: (i) => i.name,
+          },
+          {
+            key: "unitOfMeasureId",
+            header: t("inventory.unitOfMeasure"),
+            tdClassName: "text-muted-foreground",
+            filter: (
+              <Select
+                value={unitFilter}
+                onChangeAction={setUnitFilter}
+                placeholder={t("inventory.allTypes")}
+                className={filterSelectClass}
+                options={(units ?? []).map((u) => ({ value: String(u.id), label: u.name }))}
+              />
+            ),
+            render: (i) => unitName(i.unitOfMeasureId),
+          },
+          {
+            key: "salePrice",
+            header: t("inventory.salePrice"),
+            sortable: true,
+            tdClassName: "tabular-nums text-foreground",
+            render: (i) => toPersianDigits(i.salePrice),
+          },
+          {
+            key: "minStock",
+            header: t("inventory.minStock"),
+            sortable: true,
+            tdClassName: "tabular-nums text-muted-foreground",
+            render: (i) => toPersianDigits(i.minStock),
+          },
+        ]}
+        rows={items}
+        isLoading={isLoading}
+        rowKeyAction={(i) => i.id}
+        sort={sort}
+        onSortAction={toggleSort}
+      />
 
       <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("inventory.newItem")}>
         <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">

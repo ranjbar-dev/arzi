@@ -14,8 +14,9 @@ import { DateField } from "@/components/date-field";
 import { Modal } from "@/components/modal";
 import { NewButton } from "@/components/new-button";
 import { Field, fieldInputClass } from "@/components/form-field";
+import { Select } from "@/components/select";
+import { DataTable, FilterInput, filterSelectClass, useDebounced, useSort } from "@/components/data-table";
 import { useState } from "react";
-import { JournalGenerationForm } from "./journal-generation-form";
 
 const schema = z.object({
   voucherDate: z.string().min(1),
@@ -41,13 +42,23 @@ export function VoucherList({ fiscalYearId }: { fiscalYearId: number | null }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [descriptionFilter, setDescriptionFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const debouncedDescription = useDebounced(descriptionFilter);
+  const { sort, toggleSort } = useSort();
+
+  const params = new URLSearchParams();
+  if (fiscalYearId) params.set("fiscalYearId", String(fiscalYearId));
+  if (debouncedDescription) params.set("description", debouncedDescription);
+  if (statusFilter) params.set("status", statusFilter);
+  if (sort) {
+    params.set("sort", sort.field);
+    params.set("order", sort.dir);
+  }
 
   const { data: vouchers, isLoading } = useQuery({
-    queryKey: ["vouchers", fiscalYearId],
-    queryFn: () =>
-      apiRequest<VoucherSummary[]>(
-        `/api/v1/vouchers${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ""}`,
-      ),
+    queryKey: ["vouchers", fiscalYearId, debouncedDescription, statusFilter, sort],
+    queryFn: () => apiRequest<VoucherSummary[]>(`/api/v1/vouchers?${params.toString()}`),
     enabled: fiscalYearId !== null,
   });
 
@@ -86,54 +97,74 @@ export function VoucherList({ fiscalYearId }: { fiscalYearId: number | null }) {
         <NewButton onClickAction={() => setCreateOpen(true)}>{t("vouchers.newVoucher")}</NewButton>
       </div>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50 text-muted-foreground">
-                <th className="px-3 py-2 text-start font-medium">{t("vouchers.voucherNumber")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("vouchers.voucherDate")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("vouchers.description")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("vouchers.totalDebit")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("vouchers.totalCredit")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("vouchers.status")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vouchers?.map((v) => (
-                <tr
-                  key={v.id}
-                  onClick={() => router.push(`/accounting/vouchers/${v.id}`)}
-                  className="cursor-pointer border-b border-border last:border-0 hover:bg-muted"
-                >
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`/accounting/vouchers/${v.id}`}
-                      className="tabular-nums text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      {toPersianDigits(v.voucherNumber)}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{v.voucherDate}</td>
-                  <td className="px-3 py-2 text-foreground">{v.description}</td>
-                  <td className="tabular-nums px-3 py-2 text-foreground">{toPersianDigits(v.totalDebit)}</td>
-                  <td className="tabular-nums px-3 py-2 text-foreground">{toPersianDigits(v.totalCredit)}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{t(STATUS_LABEL[v.status])}</td>
-                </tr>
-              ))}
-              {vouchers?.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    —
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<VoucherSummary>
+        columns={[
+          {
+            key: "voucherNumber",
+            header: t("vouchers.voucherNumber"),
+            sortable: true,
+            render: (v) => (
+              <Link
+                href={`/accounting/vouchers/${v.id}`}
+                className="tabular-nums text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {toPersianDigits(v.voucherNumber)}
+              </Link>
+            ),
+          },
+          {
+            key: "voucherDate",
+            header: t("vouchers.voucherDate"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            render: (v) => v.voucherDate,
+          },
+          {
+            key: "description",
+            header: t("vouchers.description"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={descriptionFilter} onChangeAction={setDescriptionFilter} />,
+            render: (v) => v.description,
+          },
+          {
+            key: "totalDebit",
+            header: t("vouchers.totalDebit"),
+            sortable: true,
+            tdClassName: "tabular-nums text-foreground",
+            render: (v) => toPersianDigits(v.totalDebit),
+          },
+          {
+            key: "totalCredit",
+            header: t("vouchers.totalCredit"),
+            sortable: true,
+            tdClassName: "tabular-nums text-foreground",
+            render: (v) => toPersianDigits(v.totalCredit),
+          },
+          {
+            key: "status",
+            header: t("vouchers.status"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            filter: (
+              <Select
+                value={statusFilter}
+                onChangeAction={setStatusFilter}
+                placeholder={t("treasury.allStatuses")}
+                className={filterSelectClass}
+                options={Object.entries(STATUS_LABEL).map(([value, key]) => ({ value, label: t(key) }))}
+              />
+            ),
+            render: (v) => t(STATUS_LABEL[v.status]),
+          },
+        ]}
+        rows={vouchers}
+        isLoading={isLoading}
+        rowKeyAction={(v) => v.id}
+        sort={sort}
+        onSortAction={toggleSort}
+        onRowClickAction={(v) => router.push(`/accounting/vouchers/${v.id}`)}
+      />
 
       <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("vouchers.newVoucher")}>
         <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">
@@ -170,8 +201,6 @@ export function VoucherList({ fiscalYearId }: { fiscalYearId: number | null }) {
           </div>
         </form>
       </Modal>
-
-      <JournalGenerationForm fiscalYearId={fiscalYearId} />
     </div>
   );
 }

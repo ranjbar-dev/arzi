@@ -17,7 +17,7 @@
 use super::{authz::RequireSuperuser, hash_password, internal_error, NO_PASSWORD_SENTINEL};
 use crate::{audit, db, AppState};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
@@ -95,19 +95,44 @@ struct UserRow {
     created_at: DateTime<Utc>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListUsersQuery {
+    username: Option<String>,
+    sort: Option<String>,
+    order: Option<String>,
+}
+
+const USER_SORT_COLUMNS: &[(&str, &str)] = &[
+    ("username", "username"),
+    ("isActive", "is_active"),
+    ("isSuperuser", "is_superuser"),
+    ("createdAt", "created_at"),
+];
+
 async fn list_users(
     State(state): State<AppState>,
     admin: RequireSuperuser,
+    Query(q): Query<ListUsersQuery>,
 ) -> Result<Json<Vec<UserRow>>, (StatusCode, Json<Value>)> {
     let mut tx = db::begin(&state.pool, admin.0.tenant_id)
         .await
         .map_err(|_| internal_error())?;
 
-    let rows: Vec<(i64, String, bool, bool, DateTime<Utc>)> = sqlx::query_as(
+    let rows: Vec<(i64, String, bool, bool, DateTime<Utc>)> = sqlx::query_as(&format!(
         "SELECT id, username, is_active, is_superuser, created_at \
-         FROM users WHERE tenant_id = $1 ORDER BY id",
-    )
+         FROM users WHERE tenant_id = $1 \
+         AND ($2::text IS NULL OR username ILIKE '%' || $2 || '%') \
+         ORDER BY {}",
+        crate::sort::order_by(
+            q.sort.as_deref(),
+            q.order.as_deref(),
+            USER_SORT_COLUMNS,
+            "id"
+        ),
+    ))
     .bind(admin.0.tenant_id)
+    .bind(&q.username)
     .fetch_all(&mut *tx)
     .await
     .map_err(|_| internal_error())?;

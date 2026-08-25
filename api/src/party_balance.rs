@@ -8,11 +8,6 @@
 //! status) filter at all — it sums draft, confirmed and posted lines alike.
 //! docs/phase-3-parties.md §3.2 explicitly specifies "posted voucher lines"
 //! for the rebuild, so `compute_balance` below filters `status = 'posted'`.
-//! No kind (`ledger`/`daybook`) filter is needed on top of that: journal
-//! (`daybook`) voucher lines always point at a Kol-level account (2.6's
-//! journal generator aggregates per Kol), never at the Tafsil-level leaf a
-//! party's control account occupies, so they never coincide with a party's
-//! own coordinate — nothing to double-count.
 //!
 //! **Sign convention preserved exactly** (07-06-a.md §6.2 step 4): each
 //! coordinate's remainder is `credit − debit`; the total is positive when

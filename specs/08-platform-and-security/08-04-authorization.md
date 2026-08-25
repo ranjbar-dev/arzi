@@ -126,20 +126,6 @@ empty typed password). This is a live account-takeover path.
 | 1144 | `قفل سند` | Lock document | `B_Lock` on browser (opens lock/unlock popup) | `Admin.dfm:353` | `SanadViewU.pas:757` |
 | 1145 | `برگشت از ثبت دائم` | Revert permanent posting (TX 2→1) | `B_TX21`, only when `_TX = 2` | `Admin.dfm:366` | `SanadViewU.pas:752` |
 
-#### Group `صدور سند روزنامه` — Journal document issuance (`sRollOutPanel8`, `Admin.dfm:373-490`)
-
-| Perm | Persian caption | English | What it allows | Admin UI | Enforced at |
-|---|---|---|---|---|---|
-| 1132 | `اسناد روزنامه` | Journal documents | `Asnad_rooznameh` ribbon button → `RooznamehView` | `Admin.dfm:389` | `Mainu.pas:925` |
-| 1133 | `ثبت سند روزنامه` | Post journal document | `B_New` | `Admin.dfm:401` | `RooznamehViewU.pas:125` |
-| 1134 | `حذف سند روزنامه` | Delete journal document | `B_Delete` | `Admin.dfm:413` | `RooznamehViewU.pas:126` |
-| 1135 | `تغییر تاریخ سند روزنامه` | Change journal date | `B_Date` | `Admin.dfm:425` | `RooznamehViewU.pas:127` |
-| 1136 | `تغییر شماره سند روزنامه` | Change journal number | `B_No` | `Admin.dfm:437` | `RooznamehViewU.pas:128` |
-| 1137 | `تغییر شرح سند روزنامه` | Change journal description | `B_Desc` | `Admin.dfm:449` | `RooznamehViewU.pas:129` |
-| 1138 | `تغییر وضعیت سند` | Change document status | `B_Sabt` | `Admin.dfm:461` | `RooznamehViewU.pas:130` |
-| 1139 | `قفل سند روزنامه` | Lock journal document | `B_Lock` | `Admin.dfm:473` | `RooznamehViewU.pas:131` |
-| 1140 | `چاپ سند روزنامه` | Print journal document | `B_Print` | `Admin.dfm:485` | `RooznamehViewU.pas:132` |
-
 #### Group `گزارش حسابداری` — Accounting reports (`sRollOutPanel5`, `Admin.dfm:853-947`)
 
 | Perm | Persian caption | English | What it allows | Admin UI | Enforced at |

@@ -1,6 +1,9 @@
+"use client";
+
+import { useParams } from "next/navigation";
 import { InvoiceEditor } from "./invoice-editor";
 
-export default async function InvoiceEditorPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default function InvoiceEditorPage() {
+  const { id } = useParams<{ id: string }>();
   return <InvoiceEditor documentId={Number(id)} />;
 }

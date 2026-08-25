@@ -481,7 +481,19 @@ async fn update_claim(
 #[serde(rename_all = "camelCase")]
 struct ListQuery {
     fiscal_year_id: Option<i64>,
+    claim_number: Option<String>,
+    description: Option<String>,
+    sort: Option<String>,
+    order: Option<String>,
 }
+
+const CLAIM_SORT_COLUMNS: &[(&str, &str)] = &[
+    ("claimNumber", "claim_number"),
+    ("claimDate", "claim_date"),
+    ("totalAmount", "total_amount"),
+    ("lineCount", "line_count"),
+    ("description", "description"),
+];
 
 async fn list_claims(
     State(state): State<AppState>,
@@ -491,22 +503,26 @@ async fn list_claims(
     let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
-    let rows: Vec<ClaimRecord> = if let Some(fy) = params.fiscal_year_id {
-        sqlx::query_as(&format!(
-            "SELECT {CLAIM_COLUMNS} FROM petty_cash_claims WHERE tenant_id = $1 AND fiscal_year_id = $2 ORDER BY claim_date"
-        ))
-        .bind(auth.tenant_id)
-        .bind(fy)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?
-    } else {
-        sqlx::query_as(&format!("SELECT {CLAIM_COLUMNS} FROM petty_cash_claims WHERE tenant_id = $1 ORDER BY claim_date"))
-            .bind(auth.tenant_id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(|_| internal_error())?
-    };
+    let rows: Vec<ClaimRecord> = sqlx::query_as(&format!(
+        "SELECT {CLAIM_COLUMNS} FROM petty_cash_claims WHERE tenant_id = $1 \
+         AND ($2::bigint IS NULL OR fiscal_year_id = $2) \
+         AND ($3::text IS NULL OR claim_number ILIKE '%' || $3 || '%') \
+         AND ($4::text IS NULL OR description ILIKE '%' || $4 || '%') \
+         ORDER BY {}",
+        crate::sort::order_by(
+            params.sort.as_deref(),
+            params.order.as_deref(),
+            CLAIM_SORT_COLUMNS,
+            "claim_date"
+        ),
+    ))
+    .bind(auth.tenant_id)
+    .bind(params.fiscal_year_id)
+    .bind(&params.claim_number)
+    .bind(&params.description)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
     Ok(Json(rows))
 }

@@ -22,10 +22,7 @@
 //! posted (`status = 'posted'`) vouchers only — the legacy's export "had no
 //! `M_Tx` filter at all, so draft vouchers are exported to the tax
 //! authority," which the spec calls "the most consequential instance of the
-//! missing state filter in the whole system." Same `kind = 'ledger'` filter
-//! every other report in this phase applies (matches the legacy's own
-//! `M_kind = 1`, correctly present there — journal-summary rows never leak
-//! into the tax file either way).
+//! missing state filter in the whole system."
 //!
 //! **Also fixes the column-header defect found alongside B17**: the
 //! legacy's first column is headed `ردیف` ("row number") but its data is
@@ -223,7 +220,7 @@ async fn get_tax_authority_export(
               AND ka.subsidiary_code = 0 AND ka.analytic1_code = 0 AND ka.analytic2_code = 0 \
          LEFT JOIN accounts ma ON ma.tenant_id = a.tenant_id AND ma.general_ledger_code = a.general_ledger_code \
               AND ma.subsidiary_code = a.subsidiary_code AND ma.analytic1_code = 0 AND ma.analytic2_code = 0 \
-         WHERE vl.tenant_id = $1 AND vl.fiscal_year_id = $2 AND vl.kind = 'ledger' AND vl.status = 'posted' \
+         WHERE vl.tenant_id = $1 AND vl.fiscal_year_id = $2 AND vl.status = 'posted' \
            AND vl.line_date >= $3 AND vl.line_date <= $4 \
          ORDER BY vl.line_date, v.voucher_number, vl.id",
     )

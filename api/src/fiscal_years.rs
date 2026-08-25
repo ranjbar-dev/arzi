@@ -22,7 +22,7 @@ use crate::{
     db, period_close, AppState,
 };
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
@@ -64,19 +64,43 @@ fn internal_error() -> (StatusCode, Json<Value>) {
     )
 }
 
+#[derive(Deserialize)]
+struct ListQuery {
+    year: Option<String>,
+    sort: Option<String>,
+    order: Option<String>,
+}
+
+const FISCAL_YEAR_SORT_COLUMNS: &[(&str, &str)] = &[
+    ("year", "year"),
+    ("startDate", "start_date"),
+    ("endDate", "end_date"),
+    ("status", "is_active"),
+];
+
 async fn list_fiscal_years(
     State(state): State<AppState>,
     auth: AuthUser,
+    Query(q): Query<ListQuery>,
 ) -> Result<Json<Vec<FiscalYearRow>>, (StatusCode, Json<Value>)> {
     let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
 
-    let rows: Vec<(i64, i32, NaiveDate, NaiveDate, bool)> = sqlx::query_as(
+    let rows: Vec<(i64, i32, NaiveDate, NaiveDate, bool)> = sqlx::query_as(&format!(
         "SELECT id, year, start_date, end_date, is_active \
-         FROM fiscal_years WHERE tenant_id = $1 ORDER BY start_date",
-    )
+         FROM fiscal_years WHERE tenant_id = $1 \
+         AND ($2::text IS NULL OR year::text ILIKE '%' || $2 || '%') \
+         ORDER BY {}",
+        crate::sort::order_by(
+            q.sort.as_deref(),
+            q.order.as_deref(),
+            FISCAL_YEAR_SORT_COLUMNS,
+            "start_date"
+        ),
+    ))
     .bind(auth.tenant_id)
+    .bind(&q.year)
     .fetch_all(&mut *tx)
     .await
     .map_err(|_| internal_error())?;

@@ -35,7 +35,7 @@ export function Modal({
       onClick={(e) => {
         if (e.target === ref.current) onCloseAction();
       }}
-      className={`modal fixed inset-0 m-auto max-h-[85vh] ${widthClassName} overflow-y-auto rounded-lg border border-border bg-surface p-0 text-foreground shadow-2xl outline-none backdrop:cursor-default`}
+      className={`modal fixed inset-0 m-auto max-h-[85vh] ${widthClassName} overflow-y-auto rounded-lg border border-border bg-surface p-0 text-foreground shadow-2xl outline-none backdrop:cursor-default backdrop:bg-black/70`}
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>

@@ -25,23 +25,13 @@
 //!
 //! Step 2.8 (docs/phase-2-accounting-core.md §2.8): every route below is now
 //! permission-gated too, via plain runtime `AuthUser::has_permission` checks
-//! rather than accounts.rs's static `RequirePermission<P>` — the correct
-//! catalogue id here depends on data only known after the voucher is
-//! fetched (03-13-permissions.md §13.2 keeps completely separate ids for
-//! subsidiary (`sRollOutPanel2`) vs journal (`sRollOutPanel8`) documents,
-//! and this module's single set of handlers serves both `kind`s — see
-//! `permcodes::for_kind` below), which the type-level extractor can't
-//! express. **Judgment calls, documented once here rather than at each call
-//! site:** `add_line`/`update_line`/`delete_line` always require
-//! `amend_subsidiary_document` (1114) regardless of `kind` — the catalogue
-//! has no journal-specific line-edit id at all (journal voucher lines were
-//! never user-editable in the legacy UI to begin with, RooznamehViewU only
-//! exposes header fields; this schema allows it per 2.6's "nothing is
-//! locked afterwards" choice, so the gap is real but pre-existing, not
-//! introduced here). `list`/`get` require any ONE of the four view ids
-//! (1125/1126/1127 subsidiary, 1132 journal group) since one unified
-//! endpoint replaces the legacy's four separate list screens by status/kind
-//! — narrower than any single legacy screen, broader than none of them.
+//! rather than accounts.rs's static `RequirePermission<P>` — the catalogue id
+//! for the mutating actions below (03-13-permissions.md §13.2, the
+//! `sRollOutPanel2` subsidiary-document group) is only known after the
+//! voucher is fetched, which the type-level extractor can't express.
+//! `list`/`get` require any ONE of the three status-scoped view ids
+//! (1125/1126/1127) since one unified endpoint replaces the legacy's three
+//! separate list screens by status.
 
 use crate::{audit, auth::AuthUser, db, AppState};
 use axum::{
@@ -63,63 +53,30 @@ mod permcodes {
         "list_draft_subsidiary_documents",    // 1127
         "list_approved_subsidiary_documents", // 1125
         "list_posted_subsidiary_documents",   // 1126
-        "journal_documents", // 1132 (group id — no per-status journal list id exists)
     ];
     pub const POST_LEDGER: &str = "post_subsidiary_document"; // 1113
-    pub const POST_JOURNAL: &str = "post_journal_document"; // 1133 (generate_journal_voucher)
-    pub const AMEND_LINE: &str = "amend_subsidiary_document"; // 1114 — used for both kinds, see module doc comment
+    pub const AMEND_LINE: &str = "amend_subsidiary_document"; // 1114
 
     /// (base "amend", date-change, number-change) codes for `update_voucher`.
-    pub fn header_edit(kind: &str) -> (&'static str, &'static str, &'static str) {
-        if kind == "daybook" {
-            (
-                "change_journal_document_description",
-                "change_journal_document_date",
-                "change_journal_document_number",
-            )
-        } else {
-            (
-                "amend_subsidiary_document",
-                "change_subsidiary_document_date",
-                "change_subsidiary_document_number",
-            )
-        }
-    }
+    pub const HEADER_EDIT: (&str, &str, &str) = (
+        "amend_subsidiary_document",
+        "change_subsidiary_document_date",
+        "change_subsidiary_document_number",
+    );
 
-    pub fn delete(kind: &str) -> &'static str {
-        if kind == "daybook" {
-            "delete_journal_document"
-        } else {
-            "delete_subsidiary_document"
-        }
-    }
+    pub const DELETE: &str = "delete_subsidiary_document";
 
-    pub fn lock(kind: &str) -> &'static str {
-        if kind == "daybook" {
-            "lock_journal_document"
-        } else {
-            "lock_subsidiary_document"
-        }
-    }
+    pub const LOCK: &str = "lock_subsidiary_document";
 
-    /// Step 6.7: the catalogue's own dedicated print ids (1121/1140) — a
-    /// PDF download is this rebuild's "print," per `pdf.rs`'s own module
-    /// doc comment on `get_voucher_pdf`.
-    pub fn print(kind: &str) -> &'static str {
-        if kind == "daybook" {
-            "print_journal_document"
-        } else {
-            "print_subsidiary_document"
-        }
-    }
+    /// Step 6.7: the catalogue's own dedicated print id (1121) — a PDF
+    /// download is this rebuild's "print," per `pdf.rs`'s own module doc
+    /// comment on `get_voucher_pdf`.
+    pub const PRINT: &str = "print_subsidiary_document";
 
     /// `None` for a transition combination the state machine itself will
     /// reject as invalid — no permission is meaningful for a request that
     /// never had a chance of succeeding.
-    pub fn transition(kind: &str, from: &str, to: &str) -> Option<&'static str> {
-        if kind == "daybook" {
-            return Some("change_journal_document_status"); // 1138 — single id, all directions
-        }
+    pub fn transition(from: &str, to: &str) -> Option<&'static str> {
         match (from, to) {
             ("draft", "confirmed") => Some("approve_subsidiary_document"), // 1116
             ("confirmed", "posted") => Some("post_subsidiary_document_permanently"), // 1117
@@ -169,7 +126,6 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/transition", post(transition_voucher))
         .route("/{id}/lock", post(lock_voucher))
         .route("/{id}/unlock", post(unlock_voucher))
-        .route("/generate-journal", post(generate_journal_voucher))
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
@@ -214,12 +170,11 @@ struct VoucherRecord {
     total_credit: i64,
     line_count: i32,
     status: String,
-    kind: String,
     is_locked: bool,
 }
 
 const VOUCHER_COLUMNS: &str = "id, fiscal_year_id, voucher_number, voucher_date, description, \
-     total_debit, total_credit, line_count, status::text, kind::text, is_locked";
+     total_debit, total_credit, line_count, status::text, is_locked";
 
 #[derive(sqlx::FromRow, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -309,7 +264,19 @@ fn locked_for(voucher: &VoucherRecord, auth: &AuthUser) -> bool {
 struct ListQuery {
     fiscal_year_id: Option<i64>,
     status: Option<String>,
+    description: Option<String>,
+    sort: Option<String>,
+    order: Option<String>,
 }
+
+const VOUCHER_SORT_COLUMNS: &[(&str, &str)] = &[
+    ("voucherNumber", "voucher_number"),
+    ("voucherDate", "voucher_date"),
+    ("description", "description"),
+    ("totalDebit", "total_debit"),
+    ("totalCredit", "total_credit"),
+    ("status", "status"),
+];
 
 async fn list_vouchers(
     State(state): State<AppState>,
@@ -321,27 +288,25 @@ async fn list_vouchers(
         .await
         .map_err(|_| internal_error())?;
 
-    let mut sql = format!("SELECT {VOUCHER_COLUMNS} FROM vouchers WHERE tenant_id = $1");
-    if params.fiscal_year_id.is_some() {
-        sql.push_str(" AND fiscal_year_id = $2");
-    }
-    if params.status.is_some() {
-        sql.push_str(if params.fiscal_year_id.is_some() {
-            " AND status = $3"
-        } else {
-            " AND status = $2"
-        });
-    }
-    sql.push_str(" ORDER BY voucher_date DESC, voucher_number DESC");
+    let sql = format!(
+        "SELECT {VOUCHER_COLUMNS} FROM vouchers WHERE tenant_id = $1 \
+         AND ($2::bigint IS NULL OR fiscal_year_id = $2) \
+         AND ($3::text IS NULL OR status = $3) \
+         AND ($4::text IS NULL OR description ILIKE '%' || $4 || '%') \
+         ORDER BY {}",
+        crate::sort::order_by(
+            params.sort.as_deref(),
+            params.order.as_deref(),
+            VOUCHER_SORT_COLUMNS,
+            "voucher_date DESC, voucher_number DESC",
+        ),
+    );
 
-    let mut query = sqlx::query_as(&sql).bind(auth.tenant_id);
-    if let Some(fy) = params.fiscal_year_id {
-        query = query.bind(fy);
-    }
-    if let Some(status) = &params.status {
-        query = query.bind(status);
-    }
-    let rows = query
+    let rows = sqlx::query_as(&sql)
+        .bind(auth.tenant_id)
+        .bind(params.fiscal_year_id)
+        .bind(&params.status)
+        .bind(&params.description)
         .fetch_all(&mut *tx)
         .await
         .map_err(|_| internal_error())?;
@@ -405,10 +370,7 @@ async fn get_voucher_pdf(
     else {
         return Err(not_found("voucher"));
     };
-    // The correct id (1121 ledger / 1140 journal) depends on `voucher.kind`,
-    // only known post-fetch — same reasoning every other kind-dependent
-    // check in this module already uses (module doc comment).
-    require_permission(&auth, permcodes::print(&voucher.kind))?;
+    require_permission(&auth, permcodes::PRINT)?;
     let lines: Vec<LineRecord> = sqlx::query_as(&format!(
         "SELECT {LINE_COLUMNS} FROM voucher_lines WHERE tenant_id = $1 AND voucher_id = $2 ORDER BY id"
     ))
@@ -465,11 +427,7 @@ async fn get_voucher_pdf(
         fiscal_year_caption: fiscal_year_label
             .map(|y| format!("سال مالی {y}"))
             .unwrap_or_default(),
-        report_title: if voucher.kind == "daybook" {
-            "سند روزنامه".to_string()
-        } else {
-            "سند حسابداری".to_string()
-        },
+        report_title: "سند حسابداری".to_string(),
         period_caption: None,
         amount_in_words: None,
         signature_labels,
@@ -532,7 +490,7 @@ async fn create_voucher(
     auth: AuthUser,
     Json(req): Json<CreateVoucherRequest>,
 ) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
-    require_permission(&auth, permcodes::POST_LEDGER)?; // this endpoint only ever creates `kind = 'ledger'`
+    require_permission(&auth, permcodes::POST_LEDGER)?;
     if req.description.trim().is_empty() {
         return Err(bad_request("description_required")); // check #5
     }
@@ -605,8 +563,7 @@ async fn create_voucher(
 struct UpdateVoucherRequest {
     voucher_date: NaiveDate,
     description: String,
-    /// Optional — matches `RooznamehViewU`'s `B_No` / `SanadViewU`'s change-number action
-    /// (03-08.md §8.3). Omit to leave the number as-is.
+    /// Optional — matches `SanadViewU`'s change-number action. Omit to leave the number as-is.
     voucher_number: Option<i32>,
 }
 
@@ -638,8 +595,8 @@ async fn update_voucher(
     }
     // 03-13-permissions.md §13.2's per-field granularity: the base "amend" id is always
     // required, plus the specific date-change / number-change id for whichever fields
-    // actually changed (subsidiary vs journal ids per `voucher.kind`).
-    let (base_perm, date_perm, number_perm) = permcodes::header_edit(&voucher.kind);
+    // actually changed.
+    let (base_perm, date_perm, number_perm) = permcodes::HEADER_EDIT;
     require_permission(&auth, base_perm)?;
     if req.voucher_date != voucher.voucher_date {
         require_permission(&auth, date_perm)?;
@@ -1011,7 +968,7 @@ async fn transition_voucher(
     if locked_for(&voucher, &auth) {
         return Err(forbidden("voucher_locked"));
     }
-    if let Some(perm) = permcodes::transition(&voucher.kind, &voucher.status, &req.to) {
+    if let Some(perm) = permcodes::transition(&voucher.status, &req.to) {
         require_permission(&auth, perm)?;
     } // else: not a recognised transition at all — let the match below 400 it, no permission to check
     let Some((is_active, _, _)) = fiscal_year_gate(&mut tx, auth.tenant_id, voucher.fiscal_year_id)
@@ -1089,7 +1046,7 @@ async fn set_locked(
     else {
         return Err(not_found("voucher"));
     };
-    require_permission(auth, permcodes::lock(&voucher.kind))?;
+    require_permission(auth, permcodes::LOCK)?;
     sqlx::query(
         "UPDATE vouchers SET is_locked = $1, updated_at = now(), updated_by = $2 WHERE id = $3",
     )
@@ -1157,7 +1114,7 @@ async fn delete_voucher(
     if locked_for(&voucher, &auth) {
         return Err(forbidden("voucher_locked"));
     }
-    require_permission(&auth, permcodes::delete(&voucher.kind))?;
+    require_permission(&auth, permcodes::DELETE)?;
     let has_generated_lines: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM voucher_lines WHERE voucher_id = $1 AND source_module <> 0)",
     )
@@ -1190,279 +1147,4 @@ async fn delete_voucher(
 
     tx.commit().await.map_err(|_| internal_error())?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-// ---- journal (Rooznameh) generation, step 2.6 ---------------------------
-//
-// specs/03-accounting-core/03-08-journal-rooznameh-generation.md §8.1's
-// `MoeinToRU` generator, with two fixes the Build bullet calls out as
-// decided, not optional: the source range excludes vouchers that are
-// themselves journal vouchers (`kind = 'daybook'`), and every voucher rolled
-// into a journal voucher is marked `journalised_at` so a later overlapping
-// run can't silently double-count it.
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GenerateJournalRequest {
-    fiscal_year_id: i64,
-    from_voucher_number: Option<i32>,
-    to_voucher_number: Option<i32>,
-    from_date: Option<NaiveDate>,
-    to_date: Option<NaiveDate>,
-    /// Auto-allocated (from the same counter as every other voucher —
-    /// 03-08.md §8.1 "no separate journal numbering series") when omitted.
-    voucher_number: Option<i32>,
-    voucher_date: NaiveDate,
-    description: String,
-}
-
-async fn generate_journal_voucher(
-    State(state): State<AppState>,
-    auth: AuthUser,
-    Json(req): Json<GenerateJournalRequest>,
-) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
-    require_permission(&auth, permcodes::POST_JOURNAL)?;
-    // check #12: Length(Trim(_Desc)) <= 3 is rejected.
-    if req.description.trim().chars().count() <= 3 {
-        return Err(bad_request("description_too_short"));
-    }
-    let by_number = req.from_voucher_number.is_some() || req.to_voucher_number.is_some();
-    let by_date = req.from_date.is_some() || req.to_date.is_some();
-    if by_number == by_date {
-        // both or neither supplied — exactly one range mode is required.
-        return Err(bad_request("invalid_range"));
-    }
-
-    let mut tx = db::begin(&state.pool, auth.tenant_id)
-        .await
-        .map_err(|_| internal_error())?;
-
-    let Some((is_active, fy_start, fy_end)) =
-        fiscal_year_gate(&mut tx, auth.tenant_id, req.fiscal_year_id)
-            .await
-            .map_err(|_| internal_error())?
-    else {
-        return Err(not_found("fiscal_year"));
-    };
-    if !is_active {
-        return Err(forbidden("fiscal_year_closed"));
-    }
-    if req.voucher_date < fy_start || req.voucher_date > fy_end {
-        return Err(bad_request("date_outside_fiscal_year")); // checks #8-9
-    }
-
-    // checks #1-3 / #4-6: range bounds required and ordered.
-    let range_rows: Vec<(i64, i32, String, Option<chrono::DateTime<chrono::Utc>>)> = if by_number {
-        let (Some(from), Some(to)) = (req.from_voucher_number, req.to_voucher_number) else {
-            return Err(bad_request("invalid_range"));
-        };
-        if from <= 0 || to <= 0 || from > to {
-            return Err(bad_request("invalid_range"));
-        }
-        sqlx::query_as(
-            "SELECT id, voucher_number, status::text, journalised_at FROM vouchers \
-             WHERE tenant_id = $1 AND fiscal_year_id = $2 AND kind = 'ledger' \
-             AND voucher_number BETWEEN $3 AND $4",
-        )
-        .bind(auth.tenant_id)
-        .bind(req.fiscal_year_id)
-        .bind(from)
-        .bind(to)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?
-    } else {
-        let (Some(from), Some(to)) = (req.from_date, req.to_date) else {
-            return Err(bad_request("invalid_range"));
-        };
-        if from > to {
-            return Err(bad_request("invalid_range"));
-        }
-        sqlx::query_as(
-            "SELECT id, voucher_number, status::text, journalised_at FROM vouchers \
-             WHERE tenant_id = $1 AND fiscal_year_id = $2 AND kind = 'ledger' \
-             AND voucher_date BETWEEN $3 AND $4",
-        )
-        .bind(auth.tenant_id)
-        .bind(req.fiscal_year_id)
-        .bind(from)
-        .bind(to)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?
-    };
-
-    if range_rows.is_empty() {
-        return Err(bad_request("no_vouchers_in_range")); // check #13
-    }
-    if range_rows
-        .iter()
-        .any(|(_, _, status, _)| status != "posted")
-    {
-        return Err(bad_request("vouchers_not_all_posted")); // check #14, the key rule
-    }
-    let source_ids: Vec<i64> = range_rows
-        .iter()
-        .filter(|(_, _, _, journalised_at)| journalised_at.is_none())
-        .map(|(id, _, _, _)| *id)
-        .collect();
-    if source_ids.is_empty() {
-        // Every voucher in range was already journalised by an earlier run —
-        // the re-run-hazard fix in action (03-08.md §8.1's closing note).
-        return Err(bad_request("no_unjournalised_vouchers_in_range"));
-    }
-
-    // Gross turnover per Kol (general ledger) account, across every leaf
-    // account that posted under it — voucher_lines only carries account_id
-    // (03-03-a.md §3.3's redundancy resolved), so this is a join+group-by
-    // rather than the legacy's denormalised M_Ko group-by.
-    let totals: Vec<(i32, i64, i64)> = sqlx::query_as(
-        "SELECT a.general_ledger_code, SUM(vl.debit_amount)::bigint, SUM(vl.credit_amount)::bigint \
-         FROM voucher_lines vl JOIN accounts a ON a.id = vl.account_id \
-         WHERE vl.tenant_id = $1 AND vl.voucher_id = ANY($2) \
-         GROUP BY a.general_ledger_code ORDER BY a.general_ledger_code",
-    )
-    .bind(auth.tenant_id)
-    .bind(&source_ids)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|_| internal_error())?;
-
-    struct KolLine {
-        account_id: i64,
-        debit: i64,
-        credit: i64,
-    }
-    let mut kol_lines = Vec::with_capacity(totals.len());
-    for (kol_code, debit, credit) in &totals {
-        let account_id: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM accounts WHERE tenant_id = $1 AND general_ledger_code = $2 AND subsidiary_code = 0",
-        )
-        .bind(auth.tenant_id)
-        .bind(kol_code)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
-        let Some(account_id) = account_id else {
-            return Err(internal_error()); // data integrity: postings exist under a Kol with no Kol row
-        };
-        kol_lines.push(KolLine {
-            account_id,
-            debit: *debit,
-            credit: *credit,
-        });
-    }
-
-    let total_debit: i64 = kol_lines.iter().map(|l| l.debit).sum();
-    let total_credit: i64 = kol_lines.iter().map(|l| l.credit).sum();
-    if total_debit != total_credit {
-        // Can't happen — every source voucher is individually balanced
-        // (vouchers_balanced_when_not_draft), so their sum must be too. A
-        // defensive check, not a real validation path.
-        return Err(internal_error());
-    }
-
-    let voucher_number = match req.voucher_number {
-        Some(n) if n > 0 => n,
-        Some(_) => return Err(bad_request("invalid_voucher_number")),
-        None => sqlx::query_scalar(
-            "UPDATE fiscal_years SET next_voucher_number = next_voucher_number + 1 \
-             WHERE id = $1 RETURNING next_voucher_number - 1",
-        )
-        .bind(req.fiscal_year_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?,
-    };
-
-    // Journal voucher line count = one line per debit-side Kol + one per
-    // credit-side Kol (03-08.md §8.1's "a Kol with both produces two lines").
-    let line_count = kol_lines.iter().filter(|l| l.debit > 0).count()
-        + kol_lines.iter().filter(|l| l.credit > 0).count();
-
-    let voucher_id: i64 = sqlx::query_scalar(
-        "INSERT INTO vouchers \
-         (tenant_id, fiscal_year_id, voucher_number, voucher_date, description, \
-          total_debit, total_credit, line_count, kind, created_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'daybook', $9) RETURNING id",
-    )
-    .bind(auth.tenant_id)
-    .bind(req.fiscal_year_id)
-    .bind(voucher_number)
-    .bind(req.voucher_date)
-    .bind(req.description.trim())
-    .bind(total_debit)
-    .bind(total_credit)
-    .bind(line_count as i32)
-    .bind(auth.user_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(conflict_or_internal)?;
-
-    // All debit lines first (ordered by Kol code), then all credit lines —
-    // matches the legacy generator's output order exactly (03-08.md §8.1).
-    for line in kol_lines.iter().filter(|l| l.debit > 0) {
-        sqlx::query(
-            "INSERT INTO voucher_lines \
-             (tenant_id, voucher_id, fiscal_year_id, line_date, debit_amount, credit_amount, \
-              description, account_id, kind, created_by) \
-             VALUES ($1, $2, $3, $4, $5, 0, $6, $7, 'daybook', $8)",
-        )
-        .bind(auth.tenant_id)
-        .bind(voucher_id)
-        .bind(req.fiscal_year_id)
-        .bind(req.voucher_date)
-        .bind(line.debit)
-        .bind(req.description.trim())
-        .bind(line.account_id)
-        .bind(auth.user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
-    }
-    for line in kol_lines.iter().filter(|l| l.credit > 0) {
-        sqlx::query(
-            "INSERT INTO voucher_lines \
-             (tenant_id, voucher_id, fiscal_year_id, line_date, debit_amount, credit_amount, \
-              description, account_id, kind, created_by) \
-             VALUES ($1, $2, $3, $4, 0, $5, $6, $7, 'daybook', $8)",
-        )
-        .bind(auth.tenant_id)
-        .bind(voucher_id)
-        .bind(req.fiscal_year_id)
-        .bind(req.voucher_date)
-        .bind(line.credit)
-        .bind(req.description.trim())
-        .bind(line.account_id)
-        .bind(auth.user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
-    }
-
-    sqlx::query("UPDATE vouchers SET journalised_at = now() WHERE id = ANY($1)")
-        .bind(&source_ids)
-        .execute(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?;
-
-    audit::record_mutation(
-        &mut tx,
-        auth.tenant_id,
-        "vouchers",
-        voucher_id,
-        "insert",
-        Some(auth.user_id),
-        None,
-        Some(json!({
-            "kind": "daybook",
-            "voucherNumber": voucher_number,
-            "sourceVoucherIds": source_ids,
-        })),
-    )
-    .await
-    .map_err(|_| internal_error())?;
-
-    tx.commit().await.map_err(|_| internal_error())?;
-    Ok((StatusCode::CREATED, Json(json!({ "id": voucher_id }))))
 }

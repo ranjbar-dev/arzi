@@ -1,20 +1,30 @@
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/session";
-import { t } from "@/lib/i18n/fa";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
+import { useSession } from "@/lib/use-session";
 import { toPersianDigits } from "@/lib/format";
 import { NavLinks } from "./nav-links";
 import { LogoutButton } from "./logout-button";
+import { Breadcrumbs } from "./breadcrumbs";
 
-/** The step 1.6 "protected route wrapper": every route under this group
- * requires a valid session, checked server-side on every request (no
- * client-side-only guard) — a 401 from `/api/v1/me` redirects straight to
- * `/login`, satisfying the manual test's "unauthenticated → redirected to
- * login". Also the "session-aware layout" bullet: tenant/fiscal-year/user
- * come from the same call. */
-export default async function AppLayout({ children }: LayoutProps<"/">) {
-  const session = await getSession();
-  if (!session) {
-    redirect("/login");
+/** The step 1.6 "protected route wrapper", client-side: a 401 from
+ * `/api/v1/me` bounces to `/login`. UX only — every `/api/v1/*` route
+ * enforces the real check server-side regardless of whether this redirect
+ * fires (docs/00-overview.md). Also the "session-aware layout" bullet:
+ * tenant/fiscal-year/user come from the same call. */
+export default function AppLayout({ children }: LayoutProps<"/">) {
+  const router = useRouter();
+  const { t } = useTranslation();
+  const { data: session, isError, isLoading } = useSession();
+
+  useEffect(() => {
+    if (isError) router.replace("/login");
+  }, [isError, router]);
+
+  if (isLoading || isError || !session) {
+    return null;
   }
 
   return (
@@ -49,7 +59,10 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           <NavLinks />
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
+        <Breadcrumbs />
+        {children}
+      </main>
     </div>
   );
 }

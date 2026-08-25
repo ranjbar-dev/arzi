@@ -61,6 +61,25 @@ already resolved for most of them (see `docs/00-overview.md` "Decisions locked i
   replaces React Router, everything else there (TanStack Query/Table, React Hook Form + Zod,
   `react-i18next`) still applies. RTL Persian UI, `dir="rtl"`, CSS logical properties, no Persian
   in identifiers (translation keys only).
+  - **SPA, not SSR.** Every `app/**/page.tsx` and `layout.tsx` under `(app)/` is a `"use client"`
+    component — no Server Components, no server-side data fetching, no server-side `redirect()` for
+    page content or auth guards. Session data (`session.isSuperuser`, `currentFiscalYearId`, ...)
+    comes from `lib/use-session.ts`'s `useSession()` (TanStack Query over `/api/v1/me`), the client
+    counterpart to the server-only `lib/session.ts#getSession()`. Route params come from
+    `useParams()`, not an `async` page awaiting `params`. Tab-default routes (`/inventory`,
+    `/treasury`) client-redirect via `useRouter().replace()` in a `useEffect`, not `redirect()`.
+    The `(app)/layout.tsx` auth guard is client-side too (redirects to `/login` on a 401 from
+    `useSession()`) — this is UX only, exactly like every other client-side permission check above:
+    real enforcement is still the API's job on every request.
+  - **Two deliberate exceptions**, both pre-existing and left alone: `app/layout.tsx` (the root
+    HTML shell — `<html>`/`<body>`, the `Vazirmatn` font, `metadata` export) is necessarily a
+    Server Component because Next's App Router requires that for the root layout; it does no data
+    fetching or business logic, just static markup. `app/login/*` (`page.tsx`, `actions.ts`) stays
+    server-rendered on purpose — `docs/00-overview.md`: "Server-rendered pages are used only where
+    they help (login, print views)" — because the session cookie is `httpOnly` and can only be set
+    via a `Set-Cookie` response header, which `app/login/actions.ts`'s Server Action does by calling
+    the Rust API directly and re-issuing the cookie on the Next.js origin. Don't convert either of
+    these without re-solving the cookie/root-layout problem first.
 - **Money**: `bigint`/`i64` rials end-to-end, never floating point.
 - **Auth**: Argon2id + server-side sessions (nothing from the legacy plaintext/no-auth design
   transfers). Authorization enforced server-side on every request; client-side checks are UX only.

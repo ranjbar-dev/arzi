@@ -176,10 +176,6 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;   -- needed by the fiscal-year overla
 --          longer suspected from this angle.
 CREATE TYPE voucher_status AS ENUM ('draft', 'confirmed', 'posted');
 
--- Legacy M_Kind / DM_Kind (§2.7, §2.8).  Only 1 and 2 are ever written.
---   1 = Moein / ledger, 2 = Rooznameh / daybook
-CREATE TYPE journal_kind AS ENUM ('ledger', 'daybook');
-
 -- Legacy Sahamdar.S_Kind (§2.6).  Only 1 is ever written (SahamdarEditU.pas:290).
 CREATE TYPE party_type AS ENUM ('natural_person', 'legal_entity');
 

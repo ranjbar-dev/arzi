@@ -1,7 +1,9 @@
-import { getSession } from "@/lib/session";
+"use client";
+
+import { useSession } from "@/lib/use-session";
 import { PartyRegister } from "./party-register";
 
-export default async function PartiesPage() {
-  const session = await getSession();
+export default function PartiesPage() {
+  const { data: session } = useSession();
   return <PartyRegister canLock={!!session?.isSuperuser} />;
 }

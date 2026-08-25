@@ -1,3 +1,5 @@
+"use client";
+
 import { InventoryTabs } from "./inventory-tabs";
 
 export default function InventoryLayout({ children }: { children: React.ReactNode }) {

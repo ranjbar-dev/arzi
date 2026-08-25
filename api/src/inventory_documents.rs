@@ -251,7 +251,18 @@ struct ListQuery {
     document_type: Option<String>,
     status: Option<String>,
     warehouse_id: Option<i64>,
+    document_number: Option<String>,
+    sort: Option<String>,
+    order: Option<String>,
 }
+
+const DOCUMENT_SORT_COLUMNS: &[(&str, &str)] = &[
+    ("documentNumber", "document_number"),
+    ("documentDate", "document_date"),
+    ("documentType", "document_type::text"),
+    ("status", "status::text"),
+    ("totalAmount", "total_amount"),
+];
 
 async fn list_documents(
     State(state): State<AppState>,
@@ -267,13 +278,21 @@ async fn list_documents(
          AND ($3::text IS NULL OR document_type::text = $3) \
          AND ($4::text IS NULL OR status::text = $4) \
          AND ($5::bigint IS NULL OR warehouse_id = $5) \
-         ORDER BY document_date DESC, document_number DESC"
+         AND ($6::text IS NULL OR document_number::text ILIKE '%' || $6 || '%') \
+         ORDER BY {}",
+        crate::sort::order_by(
+            q.sort.as_deref(),
+            q.order.as_deref(),
+            DOCUMENT_SORT_COLUMNS,
+            "document_date DESC, document_number DESC",
+        ),
     ))
     .bind(auth.tenant_id)
     .bind(q.fiscal_year_id)
     .bind(&q.document_type)
     .bind(&q.status)
     .bind(q.warehouse_id)
+    .bind(&q.document_number)
     .fetch_all(&mut *tx)
     .await
     .map_err(|_| internal_error())?;

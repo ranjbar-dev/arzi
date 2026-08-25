@@ -1,3 +1,5 @@
+"use client";
+
 import { DomainPlaceholder } from "../placeholder";
 
 export default function ReportingPage() {

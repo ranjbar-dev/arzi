@@ -132,7 +132,17 @@ const WAREHOUSE_COLUMNS: &str = "id, name, vat_rate_pct, purchase_account_id, \
 struct ListWarehousesQuery {
     #[serde(default)]
     active_only: bool,
+    #[serde(default)]
+    search: Option<String>,
+    sort: Option<String>,
+    order: Option<String>,
 }
+
+const WAREHOUSE_SORT_COLUMNS: &[(&str, &str)] = &[
+    ("name", "name"),
+    ("vatRatePct", "vat_rate_pct"),
+    ("isActive", "is_active"),
+];
 
 async fn list_warehouses(
     State(state): State<AppState>,
@@ -143,11 +153,19 @@ async fn list_warehouses(
         .await
         .map_err(|_| internal_error())?;
     let sql = format!(
-        "SELECT {WAREHOUSE_COLUMNS} FROM warehouses WHERE tenant_id = $1 {} ORDER BY name",
-        if q.active_only { "AND is_active" } else { "" }
+        "SELECT {WAREHOUSE_COLUMNS} FROM warehouses WHERE tenant_id = $1 {} \
+         AND ($2::text IS NULL OR name ILIKE '%' || $2 || '%') ORDER BY {}",
+        if q.active_only { "AND is_active" } else { "" },
+        crate::sort::order_by(
+            q.sort.as_deref(),
+            q.order.as_deref(),
+            WAREHOUSE_SORT_COLUMNS,
+            "name"
+        ),
     );
     let rows = sqlx::query_as(&sql)
         .bind(auth.tenant_id)
+        .bind(&q.search)
         .fetch_all(&mut *tx)
         .await
         .map_err(|_| internal_error())?;
@@ -470,18 +488,37 @@ struct UnitRecord {
 }
 
 const UNIT_COLUMNS: &str = "id, name, base_unit_id, conversion_factor";
+const UNIT_SORT_COLUMNS: &[(&str, &str)] =
+    &[("name", "name"), ("conversionFactor", "conversion_factor")];
+
+#[derive(Deserialize)]
+struct ListUnitsQuery {
+    #[serde(default)]
+    search: Option<String>,
+    sort: Option<String>,
+    order: Option<String>,
+}
 
 async fn list_units(
     State(state): State<AppState>,
     auth: AuthUser,
+    Query(q): Query<ListUnitsQuery>,
 ) -> Result<Json<Vec<UnitRecord>>, (StatusCode, Json<Value>)> {
     let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
     let rows = sqlx::query_as(&format!(
-        "SELECT {UNIT_COLUMNS} FROM units_of_measure WHERE tenant_id = $1 ORDER BY name"
+        "SELECT {UNIT_COLUMNS} FROM units_of_measure WHERE tenant_id = $1 \
+         AND ($2::text IS NULL OR name ILIKE '%' || $2 || '%') ORDER BY {}",
+        crate::sort::order_by(
+            q.sort.as_deref(),
+            q.order.as_deref(),
+            UNIT_SORT_COLUMNS,
+            "name"
+        ),
     ))
     .bind(auth.tenant_id)
+    .bind(&q.search)
     .fetch_all(&mut *tx)
     .await
     .map_err(|_| internal_error())?;
@@ -792,7 +829,18 @@ struct ListItemsQuery {
     search: Option<String>,
     #[serde(default, rename = "activeOnly")]
     active_only: bool,
+    #[serde(rename = "unitOfMeasureId")]
+    unit_of_measure_id: Option<i64>,
+    sort: Option<String>,
+    order: Option<String>,
 }
+
+const ITEM_SORT_COLUMNS: &[(&str, &str)] = &[
+    ("code", "code"),
+    ("name", "name"),
+    ("salePrice", "sale_price"),
+    ("minStock", "min_stock"),
+];
 
 /// Item search, replacing `AnbarCalaSelectU`'s `PATINDEX`-on-every-keystroke query (§2.6) — a
 /// plain case-insensitive substring match with no 18-character truncation and no wildcard
@@ -807,13 +855,27 @@ async fn list_items(
         .map_err(|_| internal_error())?;
 
     let rows = if let Some(warehouse_id) = q.warehouse_id {
+        let prefixed_sort: Vec<(&str, String)> = ITEM_SORT_COLUMNS
+            .iter()
+            .map(|(k, c)| (*k, format!("i.{c}")))
+            .collect();
+        let order = crate::sort::order_by(
+            q.sort.as_deref(),
+            q.order.as_deref(),
+            &prefixed_sort
+                .iter()
+                .map(|(k, c)| (*k, c.as_str()))
+                .collect::<Vec<_>>(),
+            "i.name",
+        );
         sqlx::query_as(&format!(
             "SELECT {cols} FROM items i \
              JOIN item_warehouses iw ON iw.item_id = i.id AND iw.tenant_id = i.tenant_id \
              WHERE i.tenant_id = $1 AND iw.warehouse_id = $2 \
              AND ($3::text IS NULL OR i.name ILIKE '%' || $3 || '%') \
              AND ($4 = false OR i.is_active) \
-             ORDER BY i.name",
+             AND ($5::bigint IS NULL OR i.unit_of_measure_id = $5) \
+             ORDER BY {order}",
             cols = ITEM_COLUMNS
                 .split(", ")
                 .map(|c| format!("i.{c}"))
@@ -824,6 +886,7 @@ async fn list_items(
         .bind(warehouse_id)
         .bind(&q.search)
         .bind(q.active_only)
+        .bind(q.unit_of_measure_id)
         .fetch_all(&mut *tx)
         .await
         .map_err(|_| internal_error())?
@@ -831,11 +894,20 @@ async fn list_items(
         sqlx::query_as(&format!(
             "SELECT {ITEM_COLUMNS} FROM items \
              WHERE tenant_id = $1 AND ($2::text IS NULL OR name ILIKE '%' || $2 || '%') \
-             AND ($3 = false OR is_active) ORDER BY name"
+             AND ($3 = false OR is_active) \
+             AND ($4::bigint IS NULL OR unit_of_measure_id = $4) \
+             ORDER BY {}",
+            crate::sort::order_by(
+                q.sort.as_deref(),
+                q.order.as_deref(),
+                ITEM_SORT_COLUMNS,
+                "name"
+            ),
         ))
         .bind(auth.tenant_id)
         .bind(&q.search)
         .bind(q.active_only)
+        .bind(q.unit_of_measure_id)
         .fetch_all(&mut *tx)
         .await
         .map_err(|_| internal_error())?

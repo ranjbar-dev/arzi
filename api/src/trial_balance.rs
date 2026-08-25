@@ -16,13 +16,6 @@
 //! ruling ("exclude drafts everywhere") is simpler than either legacy
 //! control set and resolves both at once.
 //!
-//! **`kind = 'ledger'` only, always** — excludes journal (`daybook`)
-//! summary vouchers (2.6), matching the legacy's `M_kind = 1` filter
-//! (04-02-a.md §2.1's `_W` clause) exactly. Journal-generated lines post
-//! against the same Kol-level account their source lines already hit
-//! (`vouchers.rs::generate_journal_voucher`), so including both `kind`s
-//! would double-count every summarised Kol.
-//!
 //! **Fiscal-year selector actually scopes the query** (04-02-a.md §2.1
 //! defect (b) fixed structurally) — `fiscal_year_id` is a required bind on
 //! every query below, not a display-only parameter.
@@ -134,8 +127,7 @@ struct RawRow {
 /// The one query every level and every report is built from: gross
 /// cumulative debit/credit strictly before `before_date`, and gross
 /// cumulative debit/credit up to and including `upto_date`, grouped and
-/// rolled up to `level`, `status = 'posted'` and `kind = 'ledger'` always
-/// (see module doc comment). The group's own display name is looked up from
+/// rolled up to `level`, `status = 'posted'` always. The group's own display name is looked up from
 /// the `accounts` row that IS that level's node (e.g. the Kol row itself,
 /// `subsidiary_code = 0`), not synthesised — matching the legacy's own
 /// `Update #R Set Name=(Select S_name from sarfasl where ...)` join.
@@ -203,7 +195,7 @@ async fn fetch_level_rows(
          JOIN accounts ka ON ka.tenant_id = la.tenant_id \
               AND ka.general_ledger_code = la.general_ledger_code AND {ka_join} \
          WHERE vl.tenant_id = $1 AND vl.fiscal_year_id = $2 \
-           AND vl.kind = 'ledger' AND vl.status = 'posted' \
+           AND vl.status = 'posted' \
            AND vl.line_date <= $4{extra_filter} \
          GROUP BY {group_cols}, ka.name \
          ORDER BY {group_cols}"

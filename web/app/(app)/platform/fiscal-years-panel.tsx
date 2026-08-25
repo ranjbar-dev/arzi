@@ -12,6 +12,7 @@ import { DateField } from "@/components/date-field";
 import { Modal } from "@/components/modal";
 import { NewButton } from "@/components/new-button";
 import { Field, fieldInputClass } from "@/components/form-field";
+import { DataTable, FilterInput, useDebounced, useSort } from "@/components/data-table";
 
 interface FiscalYear {
   id: number;
@@ -44,10 +45,20 @@ export function FiscalYearsPanel({ canManage }: { canManage: boolean }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [yearFilter, setYearFilter] = useState("");
+  const debouncedYear = useDebounced(yearFilter);
+  const { sort, toggleSort } = useSort();
+
+  const params = new URLSearchParams();
+  if (debouncedYear) params.set("year", debouncedYear);
+  if (sort) {
+    params.set("sort", sort.field);
+    params.set("order", sort.dir);
+  }
 
   const { data: years, isLoading } = useQuery({
-    queryKey: ["fiscal-years"],
-    queryFn: () => apiRequest<FiscalYear[]>("/api/v1/fiscal-years"),
+    queryKey: ["fiscal-years", debouncedYear, sort],
+    queryFn: () => apiRequest<FiscalYear[]>(`/api/v1/fiscal-years?${params.toString()}`),
   });
   const { data: current } = useQuery({
     queryKey: ["fiscal-years", "current"],
@@ -107,66 +118,81 @@ export function FiscalYearsPanel({ canManage }: { canManage: boolean }) {
           {canManage && <NewButton onClickAction={() => setCreateOpen(true)}>{t("fiscalYears.newFiscalYear")}</NewButton>}
         </div>
 
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-        ) : (
-          <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/50 text-start text-muted-foreground">
-                  <th className="px-3 py-2 text-start font-medium">{t("fiscalYears.year")}</th>
-                  <th className="px-3 py-2 text-start font-medium">{t("fiscalYears.startDate")}</th>
-                  <th className="px-3 py-2 text-start font-medium">{t("fiscalYears.endDate")}</th>
-                  <th className="px-3 py-2 text-start font-medium">{t("fiscalYears.status")}</th>
-                  <th className="px-3 py-2 text-start font-medium">{t("common.actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {years?.map((fy) => (
-                  <tr key={fy.id} className="border-b border-border last:border-0">
-                    <td className="tabular-nums px-3 py-2 text-foreground">
-                      {toPersianDigits(fy.year)}
-                      {current?.fiscalYearId === fy.id && (
-                        <span className="ms-2 text-xs text-accent">({t("fiscalYears.current")})</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">{fy.startDate}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{fy.endDate}</td>
-                    <td className="px-3 py-2">
-                      {fy.isActive ? (
-                        <span className="text-success">{t("common.active")}</span>
-                      ) : (
-                        <span className="text-muted-foreground">{t("common.inactive")}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex gap-2">
-                        {current?.fiscalYearId !== fy.id && (
-                          <button
-                            type="button"
-                            onClick={() => switchMutation.mutate(fy.id)}
-                            className="cursor-pointer text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
-                          >
-                            {t("fiscalYears.switchTo")}
-                          </button>
-                        )}
-                        {canManage && fy.isActive && (
-                          <button
-                            type="button"
-                            onClick={() => closeMutation.mutate(fy.id)}
-                            className="cursor-pointer text-danger hover:underline focus-visible:ring-2 focus-visible:ring-accent"
-                          >
-                            {t("fiscalYears.close")}
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable<FiscalYear>
+          columns={[
+            {
+              key: "year",
+              header: t("fiscalYears.year"),
+              sortable: true,
+              tdClassName: "tabular-nums text-foreground",
+              filter: <FilterInput value={yearFilter} onChangeAction={setYearFilter} />,
+              render: (fy) => (
+                <>
+                  {toPersianDigits(fy.year)}
+                  {current?.fiscalYearId === fy.id && (
+                    <span className="ms-2 text-xs text-accent">({t("fiscalYears.current")})</span>
+                  )}
+                </>
+              ),
+            },
+            {
+              key: "startDate",
+              header: t("fiscalYears.startDate"),
+              sortable: true,
+              tdClassName: "text-muted-foreground",
+              render: (fy) => fy.startDate,
+            },
+            {
+              key: "endDate",
+              header: t("fiscalYears.endDate"),
+              sortable: true,
+              tdClassName: "text-muted-foreground",
+              render: (fy) => fy.endDate,
+            },
+            {
+              key: "status",
+              header: t("fiscalYears.status"),
+              sortable: true,
+              render: (fy) =>
+                fy.isActive ? (
+                  <span className="text-success">{t("common.active")}</span>
+                ) : (
+                  <span className="text-muted-foreground">{t("common.inactive")}</span>
+                ),
+            },
+            {
+              key: "actions",
+              header: t("common.actions"),
+              render: (fy) => (
+                <div className="flex gap-2">
+                  {current?.fiscalYearId !== fy.id && (
+                    <button
+                      type="button"
+                      onClick={() => switchMutation.mutate(fy.id)}
+                      className="cursor-pointer text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      {t("fiscalYears.switchTo")}
+                    </button>
+                  )}
+                  {canManage && fy.isActive && (
+                    <button
+                      type="button"
+                      onClick={() => closeMutation.mutate(fy.id)}
+                      className="cursor-pointer text-danger hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      {t("fiscalYears.close")}
+                    </button>
+                  )}
+                </div>
+              ),
+            },
+          ]}
+          rows={years}
+          isLoading={isLoading}
+          rowKeyAction={(fy) => fy.id}
+          sort={sort}
+          onSortAction={toggleSort}
+        />
 
         {canManage && (
           <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("fiscalYears.newFiscalYear")}>

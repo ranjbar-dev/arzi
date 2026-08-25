@@ -451,7 +451,20 @@ async fn update_slip(
 #[serde(rename_all = "camelCase")]
 struct ListQuery {
     fiscal_year_id: Option<i64>,
+    channel: Option<String>,
+    slip_number: Option<String>,
+    description: Option<String>,
+    sort: Option<String>,
+    order: Option<String>,
 }
+
+const SLIP_SORT_COLUMNS: &[(&str, &str)] = &[
+    ("channel", "channel::text"),
+    ("slipNumber", "slip_number"),
+    ("slipDate", "slip_date"),
+    ("amount", "amount"),
+    ("description", "description"),
+];
 
 async fn list_slips(
     State(state): State<AppState>,
@@ -461,24 +474,28 @@ async fn list_slips(
     let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
-    let rows: Vec<SlipRecord> = if let Some(fy) = params.fiscal_year_id {
-        sqlx::query_as(&format!(
-            "SELECT {SLIP_COLUMNS} FROM deposit_slips WHERE tenant_id = $1 AND fiscal_year_id = $2 ORDER BY slip_date"
-        ))
-        .bind(auth.tenant_id)
-        .bind(fy)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?
-    } else {
-        sqlx::query_as(&format!(
-            "SELECT {SLIP_COLUMNS} FROM deposit_slips WHERE tenant_id = $1 ORDER BY slip_date"
-        ))
-        .bind(auth.tenant_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?
-    };
+    let rows: Vec<SlipRecord> = sqlx::query_as(&format!(
+        "SELECT {SLIP_COLUMNS} FROM deposit_slips WHERE tenant_id = $1 \
+         AND ($2::bigint IS NULL OR fiscal_year_id = $2) \
+         AND ($3::text IS NULL OR channel::text = $3) \
+         AND ($4::text IS NULL OR slip_number ILIKE '%' || $4 || '%') \
+         AND ($5::text IS NULL OR description ILIKE '%' || $5 || '%') \
+         ORDER BY {}",
+        crate::sort::order_by(
+            params.sort.as_deref(),
+            params.order.as_deref(),
+            SLIP_SORT_COLUMNS,
+            "slip_date"
+        ),
+    ))
+    .bind(auth.tenant_id)
+    .bind(params.fiscal_year_id)
+    .bind(&params.channel)
+    .bind(&params.slip_number)
+    .bind(&params.description)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
     Ok(Json(rows))
 }

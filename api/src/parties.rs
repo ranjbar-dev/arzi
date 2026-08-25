@@ -689,7 +689,26 @@ async fn update_party(
 #[derive(Deserialize)]
 struct ListQuery {
     kind: Option<String>,
+    #[serde(rename = "cardNumber")]
+    card_number: Option<String>,
+    #[serde(rename = "firstName")]
+    first_name: Option<String>,
+    #[serde(rename = "lastName")]
+    last_name: Option<String>,
+    #[serde(rename = "nationalId")]
+    national_id: Option<String>,
+    mobile: Option<String>,
+    sort: Option<String>,
+    order: Option<String>,
 }
+
+const PARTY_SORT_COLUMNS: &[(&str, &str)] = &[
+    ("cardNumber", "card_number"),
+    ("firstName", "first_name"),
+    ("lastName", "last_name"),
+    ("nationalId", "national_id"),
+    ("mobile", "mobile"),
+];
 
 async fn list_parties(
     State(state): State<AppState>,
@@ -699,24 +718,36 @@ async fn list_parties(
     let mut tx = db::begin(&state.pool, auth.tenant_id)
         .await
         .map_err(|_| internal_error())?;
-    let rows: Vec<PartyRecord> = match params.kind.as_deref() {
-        Some(kind) if kind == "natural_person" || kind == "legal_entity" => sqlx::query_as(&format!(
-            "SELECT {PARTY_COLUMNS} FROM parties WHERE tenant_id = $1 AND party_type = $2::party_type \
-             ORDER BY last_name, first_name"
-        ))
-        .bind(auth.tenant_id)
-        .bind(kind)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?,
-        _ => sqlx::query_as(&format!(
-            "SELECT {PARTY_COLUMNS} FROM parties WHERE tenant_id = $1 ORDER BY last_name, first_name"
-        ))
-        .bind(auth.tenant_id)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(|_| internal_error())?,
-    };
+    let kind = params
+        .kind
+        .as_deref()
+        .filter(|k| *k == "natural_person" || *k == "legal_entity");
+    let rows: Vec<PartyRecord> = sqlx::query_as(&format!(
+        "SELECT {PARTY_COLUMNS} FROM parties WHERE tenant_id = $1 \
+         AND ($2::text IS NULL OR party_type = $2::party_type) \
+         AND ($3::text IS NULL OR card_number::text ILIKE '%' || $3 || '%') \
+         AND ($4::text IS NULL OR first_name ILIKE '%' || $4 || '%') \
+         AND ($5::text IS NULL OR last_name ILIKE '%' || $5 || '%') \
+         AND ($6::text IS NULL OR national_id ILIKE '%' || $6 || '%') \
+         AND ($7::text IS NULL OR mobile ILIKE '%' || $7 || '%') \
+         ORDER BY {}",
+        crate::sort::order_by(
+            params.sort.as_deref(),
+            params.order.as_deref(),
+            PARTY_SORT_COLUMNS,
+            "last_name, first_name"
+        ),
+    ))
+    .bind(auth.tenant_id)
+    .bind(kind)
+    .bind(&params.card_number)
+    .bind(&params.first_name)
+    .bind(&params.last_name)
+    .bind(&params.national_id)
+    .bind(&params.mobile)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|_| internal_error())?;
     tx.rollback().await.ok();
     Ok(Json(rows))
 }

@@ -23,9 +23,9 @@ name for a table or column, that name is reused verbatim and marked *(02)*.
 | `RoyatJU` / `TRoyatJF` | `رویت جامع اسناد معین` | `account_turnover_explorer` | `/reports/account-turnover` |
 | `Report7U` / `TReport7F` | `رویت جامع حسابداری` | *(dead — do not port)* | — |
 | `MoeinZipU` / `TMoeinZip` | `خلاصه اسناد معین` | `voucher_summary` | `/reports/voucher-summary` |
-| `RooznamehViewU` / `TRooznamehView` | `اسناد روزنامه` | `journal_voucher_list` | `/journal/vouchers` |
-| `MoeinToRU` / `TMoeinToR` | `تبدیل اسناد معین به روزنامه` | `journal_summary_generator` | `/journal/generate` |
-| `MakeRooznamehU` / `TMakeRooznameh` | (no caption) | `journal_summary_generator` *(same feature)* | `/journal/generate` |
+| `RooznamehViewU` / `TRooznamehView` | `اسناد روزنامه` | *(dropped — journal generation never built)* | — |
+| `MoeinToRU` / `TMoeinToR` | `تبدیل اسناد معین به روزنامه` | *(dropped — journal generation never built)* | — |
+| `MakeRooznamehU` / `TMakeRooznameh` | (no caption) | *(dropped — journal generation never built)* | — |
 | `PrintMU` / `PrintM2U` / `PrintNu` | `چاپ سند معين` / `چاپ سند` | `voucher_print` (one endpoint, three templates) | `/vouchers/:id/print` |
 | `SNewu` / `TSnew` | `سرفصلهای حسابداری` | `chart_of_accounts` | `/accounts` |
 | `ListSarfaslu` / `S_KolU` | `ليست سرفصلها` | *(dead — do not port)* | — |

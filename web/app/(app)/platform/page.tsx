@@ -1,6 +1,8 @@
+"use client";
+
 import Link from "next/link";
-import { getSession } from "@/lib/session";
-import { t } from "@/lib/i18n/fa";
+import { useTranslation } from "react-i18next";
+import { useSession } from "@/lib/use-session";
 import { FiscalYearsPanel } from "./fiscal-years-panel";
 
 /** Manual test item 4 (docs/phase-1-platform-and-auth.md §1.6): "as a non-
@@ -9,8 +11,9 @@ import { FiscalYearsPanel } from "./fiscal-years-panel";
  * `isSuperuser`. This is UX only; `/api/v1/admin/*` itself is what actually
  * enforces it (1.3's `RequireSuperuser`) even if someone hits the URL
  * directly, same as every other route in this app. */
-export default async function PlatformPage() {
-  const session = await getSession();
+export default function PlatformPage() {
+  const { t } = useTranslation();
+  const { data: session } = useSession();
 
   return (
     <div className="flex flex-col gap-8">

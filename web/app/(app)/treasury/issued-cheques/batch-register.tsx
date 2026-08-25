@@ -18,6 +18,7 @@ import { DateField } from "@/components/date-field";
 import { Modal } from "@/components/modal";
 import { NewButton } from "@/components/new-button";
 import { Field, fieldInputClass } from "@/components/form-field";
+import { DataTable, FilterInput, useDebounced, useSort } from "@/components/data-table";
 import type { ChequeBatchSummary } from "@/lib/treasury";
 
 const schema = z.object({
@@ -56,10 +57,24 @@ export function BatchRegister({ fiscalYearId }: { fiscalYearId: number | null })
   const queryClient = useQueryClient();
   const [bankAccountId, setBankAccountId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [batchNumberFilter, setBatchNumberFilter] = useState("");
+  const [descriptionFilter, setDescriptionFilter] = useState("");
+  const debouncedBatchNumber = useDebounced(batchNumberFilter);
+  const debouncedDescription = useDebounced(descriptionFilter);
+  const { sort, toggleSort } = useSort();
+
+  const params = new URLSearchParams();
+  if (fiscalYearId) params.set("fiscalYearId", String(fiscalYearId));
+  if (debouncedBatchNumber) params.set("batchNumber", debouncedBatchNumber);
+  if (debouncedDescription) params.set("description", debouncedDescription);
+  if (sort) {
+    params.set("sort", sort.field);
+    params.set("order", sort.dir);
+  }
 
   const { data: batches, isLoading } = useQuery({
-    queryKey: ["cheque-payment-batches", fiscalYearId],
-    queryFn: () => apiRequest<ChequeBatchSummary[]>(`/api/v1/cheque-payment-batches${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ""}`),
+    queryKey: ["cheque-payment-batches", fiscalYearId, debouncedBatchNumber, debouncedDescription, sort],
+    queryFn: () => apiRequest<ChequeBatchSummary[]>(`/api/v1/cheque-payment-batches?${params.toString()}`),
     enabled: fiscalYearId !== null,
   });
 
@@ -108,51 +123,65 @@ export function BatchRegister({ fiscalYearId }: { fiscalYearId: number | null })
         <NewButton onClickAction={() => setCreateOpen(true)}>{t("treasury.newBatch")}</NewButton>
       </div>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50 text-muted-foreground">
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.batchNumber")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.issueDate")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.listTotal")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.lineCount")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.description")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("common.actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {batches?.map((b) => (
-                <tr key={b.id} className="border-b border-border last:border-0 hover:bg-muted">
-                  <td className="px-3 py-2 text-foreground">{b.batchNumber ? toPersianDigits(b.batchNumber) : "—"}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{b.issueDate}</td>
-                  <td className="tabular-nums px-3 py-2 text-foreground">{toPersianDigits(b.totalAmount)}</td>
-                  <td className="tabular-nums px-3 py-2 text-muted-foreground">{toPersianDigits(b.lineCount)}</td>
-                  <td className="px-3 py-2 text-foreground">{b.description}</td>
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => deleteMutation.mutate(b.id)}
-                      className="cursor-pointer text-sm text-danger hover:underline focus-visible:ring-2 focus-visible:ring-danger"
-                    >
-                      {t("treasury.deleteBatch")}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {batches?.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    —
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<ChequeBatchSummary>
+        columns={[
+          {
+            key: "batchNumber",
+            header: t("treasury.batchNumber"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={batchNumberFilter} onChangeAction={setBatchNumberFilter} />,
+            render: (b) => (b.batchNumber ? toPersianDigits(b.batchNumber) : "—"),
+          },
+          {
+            key: "issueDate",
+            header: t("treasury.issueDate"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            render: (b) => b.issueDate,
+          },
+          {
+            key: "totalAmount",
+            header: t("treasury.listTotal"),
+            sortable: true,
+            tdClassName: "tabular-nums text-foreground",
+            render: (b) => toPersianDigits(b.totalAmount),
+          },
+          {
+            key: "lineCount",
+            header: t("treasury.lineCount"),
+            sortable: true,
+            tdClassName: "tabular-nums text-muted-foreground",
+            render: (b) => toPersianDigits(b.lineCount),
+          },
+          {
+            key: "description",
+            header: t("treasury.description"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={descriptionFilter} onChangeAction={setDescriptionFilter} />,
+            render: (b) => b.description,
+          },
+          {
+            key: "actions",
+            header: t("common.actions"),
+            render: (b) => (
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate(b.id)}
+                className="cursor-pointer text-sm text-danger hover:underline focus-visible:ring-2 focus-visible:ring-danger"
+              >
+                {t("treasury.deleteBatch")}
+              </button>
+            ),
+          },
+        ]}
+        rows={batches}
+        isLoading={isLoading}
+        rowKeyAction={(b) => b.id}
+        sort={sort}
+        onSortAction={toggleSort}
+      />
 
       <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("treasury.newBatch")} widthClassName="w-[min(92vw,40rem)]">
         <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">

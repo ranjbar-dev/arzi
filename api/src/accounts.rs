@@ -215,6 +215,12 @@ async fn adjust_child_count(
 #[derive(Deserialize)]
 struct ListQuery {
     parent: Option<i64>,
+    /// `?all=true` — every account for the tenant in one call, flat, code-
+    /// ordered. Feeds the chart-of-accounts tree UI (2.2's react-complex-
+    /// tree redesign), which needs the whole hierarchy client-side to
+    /// support expand-all and drag-and-drop reparenting rather than the
+    /// original drill-down-one-level-at-a-time screen.
+    all: Option<bool>,
 }
 
 /// One endpoint replaces the legacy's four `Select_Kol`/`Select_Moein`/
@@ -230,26 +236,36 @@ async fn list_accounts(
         .await
         .map_err(|_| internal_error())?;
 
-    let rows = match params.parent {
-        None => sqlx::query_as(&format!(
-            "SELECT {ACCOUNT_COLUMNS} FROM accounts \
-             WHERE tenant_id = $1 AND subsidiary_code = 0 ORDER BY general_ledger_code"
+    let rows = if params.all == Some(true) {
+        sqlx::query_as(&format!(
+            "SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE tenant_id = $1 \
+             ORDER BY general_ledger_code, subsidiary_code, analytic1_code, analytic2_code"
         ))
         .bind(auth.tenant_id)
         .fetch_all(&mut *tx)
         .await
-        .map_err(|_| internal_error())?,
-        Some(parent_id) => {
-            let Some(parent) = fetch_account(&mut tx, parent_id)
-                .await
-                .map_err(|_| internal_error())?
-            else {
-                return Err(not_found());
-            };
-            if parent.level == 4 {
-                Vec::new() // Tafsil2 is always a leaf — no children possible.
-            } else {
-                let (sql, order_by) = match parent.level {
+        .map_err(|_| internal_error())?
+    } else {
+        match params.parent {
+            None => sqlx::query_as(&format!(
+                "SELECT {ACCOUNT_COLUMNS} FROM accounts \
+             WHERE tenant_id = $1 AND subsidiary_code = 0 ORDER BY general_ledger_code"
+            ))
+            .bind(auth.tenant_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|_| internal_error())?,
+            Some(parent_id) => {
+                let Some(parent) = fetch_account(&mut tx, parent_id)
+                    .await
+                    .map_err(|_| internal_error())?
+                else {
+                    return Err(not_found());
+                };
+                if parent.level == 4 {
+                    Vec::new() // Tafsil2 is always a leaf — no children possible.
+                } else {
+                    let (sql, order_by) = match parent.level {
                     1 => (
                         "SELECT {cols} FROM accounts WHERE tenant_id = $1 \
                          AND general_ledger_code = $2 AND subsidiary_code > 0 AND analytic1_code = 0",
@@ -267,20 +283,22 @@ async fn list_accounts(
                     ),
                     _ => unreachable!(),
                 };
-                let sql = sql.replace("{cols}", ACCOUNT_COLUMNS) + &format!(" ORDER BY {order_by}");
-                let mut query = sqlx::query_as(&sql)
-                    .bind(auth.tenant_id)
-                    .bind(parent.general_ledger_code);
-                if parent.level >= 2 {
-                    query = query.bind(parent.subsidiary_code);
+                    let sql =
+                        sql.replace("{cols}", ACCOUNT_COLUMNS) + &format!(" ORDER BY {order_by}");
+                    let mut query = sqlx::query_as(&sql)
+                        .bind(auth.tenant_id)
+                        .bind(parent.general_ledger_code);
+                    if parent.level >= 2 {
+                        query = query.bind(parent.subsidiary_code);
+                    }
+                    if parent.level >= 3 {
+                        query = query.bind(parent.analytic1_code);
+                    }
+                    query
+                        .fetch_all(&mut *tx)
+                        .await
+                        .map_err(|_| internal_error())?
                 }
-                if parent.level >= 3 {
-                    query = query.bind(parent.analytic1_code);
-                }
-                query
-                    .fetch_all(&mut *tx)
-                    .await
-                    .map_err(|_| internal_error())?
             }
         }
     };

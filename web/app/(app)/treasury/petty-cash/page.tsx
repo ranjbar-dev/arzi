@@ -1,9 +1,12 @@
-import { getSession } from "@/lib/session";
-import { t } from "@/lib/i18n/fa";
+"use client";
+
+import { useTranslation } from "react-i18next";
+import { useSession } from "@/lib/use-session";
 import { ClaimRegister } from "./claim-register";
 
-export default async function PettyCashPage() {
-  const session = await getSession();
+export default function PettyCashPage() {
+  const { t } = useTranslation();
+  const { data: session } = useSession();
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-lg font-semibold text-foreground">{t("treasury.pettyCashTitle")}</h1>

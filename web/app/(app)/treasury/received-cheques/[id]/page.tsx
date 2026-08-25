@@ -1,10 +1,14 @@
-import { getSession } from "@/lib/session";
-import { t } from "@/lib/i18n/fa";
+"use client";
+
+import { useParams } from "next/navigation";
+import { useTranslation } from "react-i18next";
+import { useSession } from "@/lib/use-session";
 import { ChequeDetail } from "./cheque-detail";
 
-export default async function ChequeDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const session = await getSession();
+export default function ChequeDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const { t } = useTranslation();
+  const { data: session } = useSession();
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-lg font-semibold text-foreground">{t("treasury.receivedChequesTitle")}</h1>

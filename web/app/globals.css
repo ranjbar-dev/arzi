@@ -111,3 +111,21 @@ dialog.modal[open]::backdrop {
     transition: none;
   }
 }
+
+/* react-complex-tree (chart-of-accounts tree editor) mapped onto the design
+   system's tokens instead of the library's own light/dark defaults — these
+   already swap under prefers-color-scheme via the --color-* vars above. */
+:root {
+  --rct-color-tree-bg: transparent;
+  --rct-item-height: 34px;
+  --rct-bar-color: var(--color-accent);
+  --rct-focus-outline: var(--color-accent);
+  --rct-color-focustree-item-selected-bg: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  --rct-color-focustree-item-selected-text: var(--color-foreground);
+  --rct-color-focustree-item-hover-bg: var(--color-muted);
+  --rct-color-focustree-item-hover-text: var(--color-foreground);
+  --rct-color-focustree-item-active-bg: var(--color-muted);
+  --rct-color-focustree-item-active-text: var(--color-foreground);
+  --rct-color-focustree-item-draggingover-bg: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  --rct-color-focustree-item-draggingover-color: var(--color-foreground);
+}

@@ -50,6 +50,7 @@ export function DateField({
         calendar={persian}
         locale={persian_fa}
         calendarPosition="bottom-right"
+        portal
         inputClass={className ?? fieldInputClass}
       />
     </div>

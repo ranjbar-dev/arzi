@@ -18,6 +18,7 @@ import { DateField } from "@/components/date-field";
 import { Modal } from "@/components/modal";
 import { NewButton } from "@/components/new-button";
 import { Field, fieldInputClass } from "@/components/form-field";
+import { DataTable, FilterInput, useDebounced, useSort } from "@/components/data-table";
 import type { PettyCashClaimSummary } from "@/lib/treasury";
 
 const schema = z.object({
@@ -50,10 +51,24 @@ export function ClaimRegister({ fiscalYearId }: { fiscalYearId: number | null })
   const queryClient = useQueryClient();
   const [custodianAccountId, setCustodianAccountId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [claimNumberFilter, setClaimNumberFilter] = useState("");
+  const [descriptionFilter, setDescriptionFilter] = useState("");
+  const debouncedClaimNumber = useDebounced(claimNumberFilter);
+  const debouncedDescription = useDebounced(descriptionFilter);
+  const { sort, toggleSort } = useSort();
+
+  const params = new URLSearchParams();
+  if (fiscalYearId) params.set("fiscalYearId", String(fiscalYearId));
+  if (debouncedClaimNumber) params.set("claimNumber", debouncedClaimNumber);
+  if (debouncedDescription) params.set("description", debouncedDescription);
+  if (sort) {
+    params.set("sort", sort.field);
+    params.set("order", sort.dir);
+  }
 
   const { data: claims, isLoading } = useQuery({
-    queryKey: ["petty-cash-claims", fiscalYearId],
-    queryFn: () => apiRequest<PettyCashClaimSummary[]>(`/api/v1/petty-cash-claims${fiscalYearId ? `?fiscalYearId=${fiscalYearId}` : ""}`),
+    queryKey: ["petty-cash-claims", fiscalYearId, debouncedClaimNumber, debouncedDescription, sort],
+    queryFn: () => apiRequest<PettyCashClaimSummary[]>(`/api/v1/petty-cash-claims?${params.toString()}`),
     enabled: fiscalYearId !== null,
   });
 
@@ -102,51 +117,65 @@ export function ClaimRegister({ fiscalYearId }: { fiscalYearId: number | null })
         <NewButton onClickAction={() => setCreateOpen(true)}>{t("treasury.newClaim")}</NewButton>
       </div>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50 text-muted-foreground">
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.claimNumber")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.claimDate")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.listTotal")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.lineCount")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.description")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("common.actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {claims?.map((c) => (
-                <tr key={c.id} className="border-b border-border last:border-0 hover:bg-muted">
-                  <td className="px-3 py-2 text-foreground">{c.claimNumber ? toPersianDigits(c.claimNumber) : "—"}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{c.claimDate}</td>
-                  <td className="tabular-nums px-3 py-2 text-foreground">{toPersianDigits(c.totalAmount)}</td>
-                  <td className="tabular-nums px-3 py-2 text-muted-foreground">{toPersianDigits(c.lineCount)}</td>
-                  <td className="px-3 py-2 text-foreground">{c.description}</td>
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => deleteMutation.mutate(c.id)}
-                      className="cursor-pointer text-sm text-danger hover:underline focus-visible:ring-2 focus-visible:ring-danger"
-                    >
-                      {t("treasury.deleteClaim")}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {claims?.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    —
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<PettyCashClaimSummary>
+        columns={[
+          {
+            key: "claimNumber",
+            header: t("treasury.claimNumber"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={claimNumberFilter} onChangeAction={setClaimNumberFilter} />,
+            render: (c) => (c.claimNumber ? toPersianDigits(c.claimNumber) : "—"),
+          },
+          {
+            key: "claimDate",
+            header: t("treasury.claimDate"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            render: (c) => c.claimDate,
+          },
+          {
+            key: "totalAmount",
+            header: t("treasury.listTotal"),
+            sortable: true,
+            tdClassName: "tabular-nums text-foreground",
+            render: (c) => toPersianDigits(c.totalAmount),
+          },
+          {
+            key: "lineCount",
+            header: t("treasury.lineCount"),
+            sortable: true,
+            tdClassName: "tabular-nums text-muted-foreground",
+            render: (c) => toPersianDigits(c.lineCount),
+          },
+          {
+            key: "description",
+            header: t("treasury.description"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={descriptionFilter} onChangeAction={setDescriptionFilter} />,
+            render: (c) => c.description,
+          },
+          {
+            key: "actions",
+            header: t("common.actions"),
+            render: (c) => (
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate(c.id)}
+                className="cursor-pointer text-sm text-danger hover:underline focus-visible:ring-2 focus-visible:ring-danger"
+              >
+                {t("treasury.deleteClaim")}
+              </button>
+            ),
+          },
+        ]}
+        rows={claims}
+        isLoading={isLoading}
+        rowKeyAction={(c) => c.id}
+        sort={sort}
+        onSortAction={toggleSort}
+      />
 
       <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("treasury.newClaim")} widthClassName="w-[min(92vw,40rem)]">
         <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">

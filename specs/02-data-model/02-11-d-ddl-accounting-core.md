@@ -22,7 +22,6 @@ CREATE TABLE vouchers (
     total_credit   bigint         NOT NULL DEFAULT 0,   -- legacy DM_TBes
     line_count     integer        NOT NULL DEFAULT 0,   -- legacy DM_Count — a header with 0 is DELETED (Dmu.pas:855)
     status         voucher_status NOT NULL DEFAULT 'draft',   -- legacy DM_Tx 0/1/2
-    kind           journal_kind   NOT NULL DEFAULT 'ledger',  -- legacy DM_Kind 1/2
     is_locked      boolean        NOT NULL DEFAULT false,     -- legacy DM_Lock — FAIL-CLOSED (Dmu.pas:993, §9.6)
     cross_reference integer,                       -- legacy DM_Atf عطف — purpose unconfirmed (§12.10 item 4)
     -- MIGRATION ONLY (§6.8 rule 4, §12.1)
@@ -44,7 +43,7 @@ CREATE TABLE vouchers (
 );
 
 CREATE INDEX vouchers_year_date_idx   ON vouchers (tenant_id, fiscal_year_id, voucher_date);
-CREATE INDEX vouchers_year_status_idx ON vouchers (tenant_id, fiscal_year_id, status, kind);
+CREATE INDEX vouchers_year_status_idx ON vouchers (tenant_id, fiscal_year_id, status);
 CREATE INDEX vouchers_open_draft_idx  ON vouchers (tenant_id, fiscal_year_id, voucher_date)
     WHERE status = 'draft';   -- serves Get_NewSanad_DateID's "reuse today's draft" lookup (§5.3.2)
 
@@ -105,7 +104,6 @@ CREATE TABLE voucher_lines (
     description    text,                           -- legacy Article varchar(250) — ONLY this column exists, no M_Article (§12.10 item 1)
     account_id     bigint         NOT NULL REFERENCES accounts(id),   -- legacy M_Code
     status         voucher_status NOT NULL DEFAULT 'draft',   -- legacy M_Tx — duplicated from the header
-    kind           journal_kind   NOT NULL DEFAULT 'ledger',  -- legacy M_Kind
     source_module  smallint       NOT NULL DEFAULT 0 REFERENCES journal_sources(id),  -- legacy M_ID
     source_id      bigint,                         -- legacy M_Link — POLYMORPHIC, cannot be a FK (§13.8)
     -- MIGRATION ONLY (§6.8 rule 4, §12.1)
@@ -138,7 +136,7 @@ CREATE INDEX voucher_lines_ledger_idx                                   -- serve
 CREATE INDEX voucher_lines_source_idx   ON voucher_lines (tenant_id, source_module, source_id)
     WHERE source_id IS NOT NULL;                                        -- serves every drill-down
 CREATE INDEX voucher_lines_trial_balance_idx                            -- serves Taraz4/Taraz_6
-    ON voucher_lines (tenant_id, fiscal_year_id, kind, status, line_date)
+    ON voucher_lines (tenant_id, fiscal_year_id, status, line_date)
     INCLUDE (account_id, debit_amount, credit_amount);
 
 ALTER TABLE voucher_lines ENABLE ROW LEVEL SECURITY;

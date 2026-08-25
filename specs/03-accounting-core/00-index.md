@@ -28,7 +28,6 @@ This document was split into per-section files for readability. Each file below 
 | 6 | Automatic voucher generation (1/2: §6.1–6.4) | [03-06-a-automatic-voucher-generation.md](03-06-a-automatic-voucher-generation.md) | 150 |
 | 6 | Automatic voucher generation (2/2: §6.5–6.8) | [03-06-b-automatic-voucher-generation.md](03-06-b-automatic-voucher-generation.md) | 202 |
 | 7 | Merging vouchers — `MergeSanad.pas` | [03-07-merging-vouchers-mergesanad-pas.md](03-07-merging-vouchers-mergesanad-pas.md) | 82 |
-| 8 | Journal (Rooznameh) generation | [03-08-journal-rooznameh-generation.md](03-08-journal-rooznameh-generation.md) | 232 |
 | 9 | Period close and year-end (1/3: intro, §9.1–9.2) | [03-09-a-period-close-and-year-end.md](03-09-a-period-close-and-year-end.md) | 216 |
 | 9 | Period close and year-end (2/3: §9.3) | [03-09-b-period-close-and-year-end.md](03-09-b-period-close-and-year-end.md) | 223 |
 | 9 | Period close and year-end (3/3: §9.4–9.7) | [03-09-c-period-close-and-year-end.md](03-09-c-period-close-and-year-end.md) | 157 |

@@ -15,6 +15,7 @@ import { Modal } from "@/components/modal";
 import { NewButton } from "@/components/new-button";
 import { Field, fieldInputClass } from "@/components/form-field";
 import { Select } from "@/components/select";
+import { DataTable, FilterInput, useDebounced, useSort } from "@/components/data-table";
 import type { UnitOfMeasure } from "@/lib/inventory";
 
 const schema = z.object({
@@ -37,10 +38,20 @@ export function UnitRegister() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [nameFilter, setNameFilter] = useState("");
+  const debouncedName = useDebounced(nameFilter);
+  const { sort, toggleSort } = useSort();
+
+  const params = new URLSearchParams();
+  if (debouncedName) params.set("search", debouncedName);
+  if (sort) {
+    params.set("sort", sort.field);
+    params.set("order", sort.dir);
+  }
 
   const { data: units, isLoading } = useQuery({
-    queryKey: ["units-of-measure"],
-    queryFn: () => apiRequest<UnitOfMeasure[]>("/api/v1/units-of-measure"),
+    queryKey: ["units-of-measure", debouncedName, sort],
+    queryFn: () => apiRequest<UnitOfMeasure[]>(`/api/v1/units-of-measure?${params.toString()}`),
   });
 
   const {
@@ -74,37 +85,36 @@ export function UnitRegister() {
         <NewButton onClickAction={() => setCreateOpen(true)}>{t("inventory.newUnit")}</NewButton>
       </div>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50 text-muted-foreground">
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.unitName")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.baseUnit")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.conversionFactor")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {units?.map((u) => (
-                <tr key={u.id} className="border-b border-border last:border-0 hover:bg-muted">
-                  <td className="px-3 py-2 text-foreground">{u.name}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{u.baseUnitId ? nameOf(u.baseUnitId) : t("inventory.none")}</td>
-                  <td className="tabular-nums px-3 py-2 text-muted-foreground">{toPersianDigits(u.conversionFactor)}</td>
-                </tr>
-              ))}
-              {units?.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    —
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<UnitOfMeasure>
+        columns={[
+          {
+            key: "name",
+            header: t("inventory.unitName"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={nameFilter} onChangeAction={setNameFilter} />,
+            render: (u) => u.name,
+          },
+          {
+            key: "baseUnitId",
+            header: t("inventory.baseUnit"),
+            tdClassName: "text-muted-foreground",
+            render: (u) => (u.baseUnitId ? nameOf(u.baseUnitId) : t("inventory.none")),
+          },
+          {
+            key: "conversionFactor",
+            header: t("inventory.conversionFactor"),
+            sortable: true,
+            tdClassName: "tabular-nums text-muted-foreground",
+            render: (u) => toPersianDigits(u.conversionFactor),
+          },
+        ]}
+        rows={units}
+        isLoading={isLoading}
+        rowKeyAction={(u) => u.id}
+        sort={sort}
+        onSortAction={toggleSort}
+      />
 
       <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("inventory.newUnit")}>
         <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">

@@ -1,5 +1,12 @@
-import { redirect } from "next/navigation";
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function TreasuryPage() {
-  redirect("/treasury/received-cheques");
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/treasury/received-cheques");
+  }, [router]);
+  return null;
 }

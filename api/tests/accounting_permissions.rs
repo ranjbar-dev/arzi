@@ -195,27 +195,6 @@ async fn voucher_routes_are_gated_by_their_catalogue_ids(pool: PgPool) -> sqlx::
     let (user_id, token) = make_user(&pool, tenant_id, "clerk").await;
     let router = app(AppState { pool: pool.clone() });
 
-    // Seed via a superuser session so account/fiscal-year setup isn't itself gated by
-    // the permissions under test.
-    let (_, admin_token) = {
-        let admin_id: i64 = sqlx::query_scalar(
-            "INSERT INTO users (tenant_id, username, password_hash, is_superuser) \
-             VALUES ($1, 'root', 'x', true) RETURNING id",
-        )
-        .bind(tenant_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        let t = format!("test-session-{admin_id}");
-        sqlx::query("INSERT INTO sessions (id, user_id, tenant_id, expires_at) VALUES ($1, $2, $3, now() + interval '1 hour')")
-            .bind(&t)
-            .bind(admin_id)
-            .bind(tenant_id)
-            .execute(&pool)
-            .await
-            .unwrap();
-        (admin_id, t)
-    };
     let fiscal_year_id: i64 = sqlx::query_scalar(
         "INSERT INTO fiscal_years (tenant_id, year, start_date, end_date) \
          VALUES ($1, 1403, '2024-03-20', '2025-03-20') RETURNING id",
@@ -367,43 +346,6 @@ async fn voucher_routes_are_gated_by_their_catalogue_ids(pool: PgPool) -> sqlx::
     )
     .await;
     assert_eq!(lock.status(), StatusCode::NO_CONTENT);
-
-    // generate-journal -- needs post_journal_document (1133), an entirely separate id family.
-    let generate = req(
-        &router,
-        "POST",
-        "/api/v1/vouchers/generate-journal",
-        &token,
-        json!({
-            "fiscalYearId": fiscal_year_id, "fromDate": "2024-04-01", "toDate": "2024-04-01",
-            "voucherDate": "2024-04-02", "description": "journal roll-up"
-        }),
-    )
-    .await;
-    assert_eq!(generate.status(), StatusCode::FORBIDDEN);
-    grant(&pool, tenant_id, user_id, "post_journal_document").await;
-    // (the voucher above is now locked -- unlock via the still-superuser admin session,
-    // otherwise it can't be journalised; irrelevant to the permission being tested.)
-    let _ = req(
-        &router,
-        "POST",
-        &format!("/api/v1/vouchers/{voucher_id}/unlock"),
-        &admin_token,
-        Value::Null,
-    )
-    .await;
-    let generate = req(
-        &router,
-        "POST",
-        "/api/v1/vouchers/generate-journal",
-        &token,
-        json!({
-            "fiscalYearId": fiscal_year_id, "fromDate": "2024-04-01", "toDate": "2024-04-01",
-            "voucherDate": "2024-04-02", "description": "journal roll-up"
-        }),
-    )
-    .await;
-    assert_eq!(generate.status(), StatusCode::CREATED);
 
     Ok(())
 }

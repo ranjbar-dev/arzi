@@ -1,9 +1,12 @@
-import { getSession } from "@/lib/session";
-import { t } from "@/lib/i18n/fa";
+"use client";
+
+import { useTranslation } from "react-i18next";
+import { useSession } from "@/lib/use-session";
 import { VoucherList } from "./voucher-list";
 
-export default async function VouchersPage() {
-  const session = await getSession();
+export default function VouchersPage() {
+  const { t } = useTranslation();
+  const { data: session } = useSession();
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-lg font-semibold text-foreground">{t("vouchers.title")}</h1>

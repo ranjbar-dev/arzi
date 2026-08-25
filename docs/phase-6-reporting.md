@@ -65,10 +65,8 @@ B6).
   `M_Kind = 2` rows — lines of a *manually generated* journal-summary voucher — so "Daftar Kol shows
   nothing until someone presses 'ساخت روزنامه'" and even then only shows draft-state summary rows
   (`04-03-a.md` §3.0's consequences list, items 1 and 3). The rebuild's general ledger reads posted
-  (`status = 2`) voucher lines **directly**, grouped/rolled up to Kol level on the fly. It has no
-  dependency on journal generation (Phase 2.6) having run — journal generation remains a genuinely
-  optional *summary document*, not a prerequisite for the ledger to have data. This was one of the
-  explicit checks planned back in step 2.6; confirm it here.
+  (`status = 2`) voucher lines **directly**, grouped/rolled up to Kol level on the fly — journal
+  (Rooznameh) generation was never built, so there is nothing for the ledger to depend on.
 - Subsidiary ledger (Daftar Moein): one 4-segment account, full transaction detail, opening balance
   + running balance — matching `04-03-a.md` §3.1's shape but for `M_kind=1`-equivalent (ordinary
   posted lines) directly, not the summary-only path.
@@ -103,8 +101,8 @@ B6).
 
 **Manual test**
 
-1. Post several vouchers (no journal generation run) → open the general ledger → confirm it shows
-   data immediately, with no dependency on having run journal generation (direct B6 test).
+1. Post several vouchers → open the general ledger → confirm it shows data immediately (direct B6
+   test).
 2. Construct a case with both debit and credit activity before the report's from-date → confirm the
    opening balance is a single correct net figure, not confusing gross totals.
 3. Reproduce a scenario that would trigger B4 (opening leg omitting a kind) and B5 (one-day boundary
@@ -114,7 +112,7 @@ B6).
 5. Lock one segment of an account, attempt to view its ledger as a non-admin → rejected with a
    message describing the actual rule (lock, not admin-only).
 
-**Done when:** the general ledger works without journal generation ever having run, and B4/B5's
+**Done when:** the general ledger shows data with no separate build step required, and B4/B5's
 specific numeric discrepancies cannot be reproduced.
 
 ---

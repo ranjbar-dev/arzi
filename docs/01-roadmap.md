@@ -22,7 +22,6 @@ is the checklist — tick steps off here as they pass their manual test.
 | 2.3 | Voucher model + state machine | Header+lines, `0→1→2`, balance check only on issue | `03-03-a/b/c`, `03-04-voucher-validation-rules.md` | — |
 | 2.4 | Voucher editor UI | Line grid, add/edit/delete, import, balance indicator | `03-12-a/b/c` (SanadEditU screen) | — |
 | 2.5 | Automatic voucher generation engine | Generic engine other domains call to post their own vouchers | `03-06-a/b` | — |
-| 2.6 | Journal (Rooznameh) generation | Moein→Rooznameh conversion; Daftar Kol reads posted rows | `03-08-journal-rooznameh-generation.md` | B6 |
 | 2.7 | Period close / year-end | `NewFinalu` (close) → `EnteghalU` (carry-forward), order enforced | `03-09-a/b/c`, A7 | A7 |
 | 2.8 | Accounting-core permissions | Wire the permission catalogue to every accounting-core route | `03-13-permissions.md` | — |
 | **Phase 3 — Parties** | | | | |

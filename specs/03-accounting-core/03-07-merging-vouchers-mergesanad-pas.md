@@ -79,4 +79,4 @@ navigate to the surviving voucher. Success: `'   ادغام انجام شد   '`
 
 ---
 
-_Prev: [03-06-b-automatic-voucher-generation](03-06-b-automatic-voucher-generation.md) | Next: [03-08-journal-rooznameh-generation](03-08-journal-rooznameh-generation.md)_
+_Prev: [03-06-b-automatic-voucher-generation](03-06-b-automatic-voucher-generation.md) | Next: [03-09-a-period-close-and-year-end](03-09-a-period-close-and-year-end.md)_

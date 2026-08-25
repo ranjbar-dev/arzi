@@ -26,7 +26,6 @@ and approximate line counts): [docs/03-accounting-core/00-index.md](03-accountin
 | 5 | Voucher line editing behaviour | [03-05-a](03-accounting-core/03-05-a-voucher-line-editing-behaviour.md), [03-05-b](03-accounting-core/03-05-b-voucher-line-editing-behaviour.md) |
 | 6 | Automatic voucher generation | [03-06-a](03-accounting-core/03-06-a-automatic-voucher-generation.md), [03-06-b](03-accounting-core/03-06-b-automatic-voucher-generation.md) |
 | 7 | Merging vouchers — `MergeSanad.pas` | [03-07-merging-vouchers-mergesanad-pas.md](03-accounting-core/03-07-merging-vouchers-mergesanad-pas.md) |
-| 8 | Journal (Rooznameh) generation | [03-08-journal-rooznameh-generation.md](03-accounting-core/03-08-journal-rooznameh-generation.md) |
 | 9 | Period close and year-end | [03-09-a](03-accounting-core/03-09-a-period-close-and-year-end.md), [03-09-b](03-accounting-core/03-09-b-period-close-and-year-end.md), [03-09-c](03-accounting-core/03-09-c-period-close-and-year-end.md) |
 | 10 | Aggregation / consolidation — `TajmiU.pas` | [03-10-aggregation-consolidation-tajmiu-pas.md](03-accounting-core/03-10-aggregation-consolidation-tajmiu-pas.md) |
 | 11 | Index of all SQL in the accounting core | [03-11-index-of-all-sql-in-the-accounting-core.md](03-accounting-core/03-11-index-of-all-sql-in-the-accounting-core.md) |

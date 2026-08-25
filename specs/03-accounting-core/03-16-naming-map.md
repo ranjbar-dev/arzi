@@ -156,12 +156,12 @@ Role enum values: `11` → `CashChequeIssue`, `12` → `PostdatedChequeIssue`, `
 | `EditArticleMoeinU` | Voucher line dialog | `VoucherLineDialog` | — |
 | `SanadMoeinu` (legacy) | Legacy voucher screen | *(retire)* | — |
 | `ArticleMoeinu` (legacy) | Legacy line dialog | *(retire)* | — |
-| `ArticleRooznamehU` | Journal line dialog | `JournalLineDialog` | — |
+| `ArticleRooznamehU` | Journal line dialog | *(dropped — journal generation never built)* | — |
 | `Sanad_NDU` | Voucher number + date prompt | *(fold into `VoucherEditorPage`)* | — |
 | `MergeSanad` | Merge two vouchers | `MergeVouchersDialog` | — |
 | `MoeinSearchU` | Voucher-line search | `VoucherLineSearchPage` | `/vouchers/lines/search` |
-| `RooznamehViewU` | Journal voucher browser | `JournalListPage` | `/journal` |
-| `MoeinToRU` | Journal generation | `GenerateJournalDialog` | `/journal/new` |
+| `RooznamehViewU` | Journal voucher browser | *(dropped — journal generation never built)* | — |
+| `MoeinToRU` | Journal generation | *(dropped — journal generation never built)* | — |
 | `MakeRooznamehU` (legacy) | Legacy journal generation | *(retire)* | — |
 | `SodoorSanadU` | Inventory posting list | `InventoryPostingPage` | `/postings/inventory` |
 | `MakeSanadU` | Generated-voucher preview | `GeneratedVoucherPreview` | — |

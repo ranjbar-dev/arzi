@@ -9,13 +9,7 @@
 //! (`DKolU`) reads only `M_Kind = 2` rows: lines of a *manually generated*
 //! journal-summary voucher, so "Daftar Kol shows nothing until someone
 //! presses ساخت روزنامه" (04-03-a.md §3.0). This rebuild's ledger reads
-//! posted (`status = 'posted'`) `voucher_lines` **directly** — no dependency
-//! on journal generation (2.6) having ever run. `kind = 'ledger'` is filtered
-//! too (undocumented in the Build bullet but structurally required): a
-//! journal-generated summary line posts against the very same Kol-level
-//! account its own source lines already hit, so including both `kind`s
-//! would double-count every summarised Kol — same reasoning as 6.1's
-//! `trial_balance.rs`.
+//! posted (`status = 'posted'`) `voucher_lines` **directly**.
 //!
 //! **Posted-only, uniformly** — a real behaviour *change* from the legacy
 //! (04-03-a.md §3.1.d / §3.6: "all four ledgers include state-0 drafts"),
@@ -153,7 +147,7 @@ async fn fetch_opening(
     sqlx::query_scalar(&format!(
         "SELECT COALESCE(SUM(vl.credit_amount - vl.debit_amount), 0)::bigint \
          FROM voucher_lines vl JOIN accounts a ON a.id = vl.account_id \
-         WHERE vl.tenant_id = $1 AND vl.status = 'posted' AND vl.kind = 'ledger' \
+         WHERE vl.tenant_id = $1 AND vl.status = 'posted' \
            AND {ACCOUNT_AND_YEAR_PREDICATE} \
            AND vl.line_date < $8"
     ))
@@ -196,7 +190,7 @@ async fn fetch_movement(
          FROM voucher_lines vl \
          JOIN accounts a ON a.id = vl.account_id \
          JOIN vouchers v ON v.id = vl.voucher_id \
-         WHERE vl.tenant_id = $1 AND vl.status = 'posted' AND vl.kind = 'ledger' \
+         WHERE vl.tenant_id = $1 AND vl.status = 'posted' \
            AND {ACCOUNT_AND_YEAR_PREDICATE} \
            AND vl.line_date >= $8 AND vl.line_date <= $9 \
          ORDER BY vl.line_date, v.voucher_number, vl.id"

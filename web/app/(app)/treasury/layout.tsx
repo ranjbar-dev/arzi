@@ -1,3 +1,5 @@
+"use client";
+
 import { TreasuryTabs } from "./treasury-tabs";
 
 export default function TreasuryLayout({ children }: { children: React.ReactNode }) {

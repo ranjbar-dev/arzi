@@ -1,9 +1,12 @@
-import { getSession } from "@/lib/session";
-import { t } from "@/lib/i18n/fa";
+"use client";
+
+import { useTranslation } from "react-i18next";
+import { useSession } from "@/lib/use-session";
 import { ChartOfAccountsEditor } from "./editor";
 
-export default async function ChartOfAccountsPage() {
-  const session = await getSession();
+export default function ChartOfAccountsPage() {
+  const { t } = useTranslation();
+  const { data: session } = useSession();
   return (
     <div className="flex flex-col gap-4">
       <div>

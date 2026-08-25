@@ -1,6 +1,7 @@
+"use client";
+
 import Link from "next/link";
-import { t } from "@/lib/i18n/fa";
-import { AccountSearch } from "./account-search";
+import { useTranslation } from "react-i18next";
 import { AccountsTreeIcon } from "@/components/accounts-tree-icon";
 import { VoucherIcon } from "@/components/voucher-icon";
 
@@ -32,6 +33,7 @@ function AccountingCard({
 }
 
 export default function AccountingPage() {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-8">
       <div>
@@ -51,7 +53,6 @@ export default function AccountingPage() {
           icon={<VoucherIcon />}
         />
       </div>
-      <AccountSearch />
     </div>
   );
 }

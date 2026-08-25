@@ -1,8 +1,11 @@
-import { getSession } from "@/lib/session";
-import { t } from "@/lib/i18n/fa";
+"use client";
 
-export default async function DashboardPage() {
-  const session = await getSession();
+import { useTranslation } from "react-i18next";
+import { useSession } from "@/lib/use-session";
+
+export default function DashboardPage() {
+  const { t } = useTranslation();
+  const { data: session } = useSession();
   return (
     <div>
       <h1 className="text-lg font-semibold text-foreground">

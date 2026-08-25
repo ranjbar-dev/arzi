@@ -126,6 +126,9 @@ export const fa = {
     levelTafsil1: "تفصیلی ۱",
     levelTafsil2: "تفصیلی ۲",
     emptyBranch: "این شاخه خالی است.",
+    editAccount: "ویرایش",
+    editAccountTitle: "ویرایش حساب",
+    dragHint: "برای انتقال یک حساب، آن را روی حساب هم‌سطح رها کنید تا داخل آن قرار گیرد؛ برای خارج کردن از شاخه، روی فضای خالی درخت رها کنید.",
   },
   vouchers: {
     // 03-03-b.md §3.6's canonical labels (SanadViewU.pas:126-128 window captions).
@@ -166,18 +169,6 @@ export const fa = {
     bothSidesFilled: "فقط یکی از دو ستون بدهکار یا بستانکار را وارد کنید.",
     hasGeneratedLines: "این سند دارای ردیف‌های سیستمی است و از اینجا قابل حذف نیست.",
     editHeader: "ویرایش سرند",
-    generateJournal: "صدور سند روزنامه",
-    journalRangeByNumber: "بازه بر اساس شماره سند",
-    journalRangeByDate: "بازه بر اساس تاریخ",
-    fromVoucherNumber: "از شماره سند",
-    toVoucherNumber: "تا شماره سند",
-    fromDate: "از تاریخ",
-    toDate: "تا تاریخ",
-    descriptionTooShort: "شرح سند باید بیش از سه نویسه باشد.",
-    invalidRange: "بازه را به‌درستی وارد کنید.",
-    noVouchersInRange: "سندی در بازه مشخص‌شده یافت نشد.",
-    vouchersNotAllPosted: "همه اسناد بازه باید ابتدا ثبت دائم شوند.",
-    noUnjournalisedVouchersInRange: "همه اسناد این بازه قبلاً در سند روزنامه دیگری منظور شده‌اند.",
   },
   parties: {
     // Captions verbatim from specs/07-parties-and-shareholders/07-10.md.

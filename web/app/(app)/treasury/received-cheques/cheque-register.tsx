@@ -22,6 +22,7 @@ import { Modal } from "@/components/modal";
 import { NewButton } from "@/components/new-button";
 import { Field, fieldInputClass } from "@/components/form-field";
 import { Select } from "@/components/select";
+import { DataTable, FilterInput, filterSelectClass, useDebounced, useSort } from "@/components/data-table";
 import type { ChequeStatus, ChequeSummary } from "@/lib/treasury";
 
 const schema = z.object({
@@ -61,14 +62,25 @@ export function ChequeRegister({ fiscalYearId }: { fiscalYearId: number | null }
   const [payerAccountId, setPayerAccountId] = useState<number | null>(null);
   const [notesAccountId, setNotesAccountId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [chequeNumberFilter, setChequeNumberFilter] = useState("");
+  const [descriptionFilter, setDescriptionFilter] = useState("");
+  const debouncedChequeNumber = useDebounced(chequeNumberFilter);
+  const debouncedDescription = useDebounced(descriptionFilter);
+  const { sort, toggleSort } = useSort();
 
   const params = new URLSearchParams();
   if (fiscalYearId) params.set("fiscalYearId", String(fiscalYearId));
   if (statusFilter) params.set("status", statusFilter);
   if (dueBefore) params.set("dueBefore", dueBefore);
+  if (debouncedChequeNumber) params.set("chequeNumber", debouncedChequeNumber);
+  if (debouncedDescription) params.set("description", debouncedDescription);
+  if (sort) {
+    params.set("sort", sort.field);
+    params.set("order", sort.dir);
+  }
 
   const { data: cheques, isLoading } = useQuery({
-    queryKey: ["received-cheques", fiscalYearId, statusFilter, dueBefore],
+    queryKey: ["received-cheques", fiscalYearId, statusFilter, dueBefore, debouncedChequeNumber, debouncedDescription, sort],
     queryFn: () => apiRequest<ChequeSummary[]>(`/api/v1/received-cheques?${params.toString()}`),
     enabled: fiscalYearId !== null,
   });
@@ -117,70 +129,79 @@ export function ChequeRegister({ fiscalYearId }: { fiscalYearId: number | null }
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted-foreground">{t("treasury.status")}</label>
-            <Select
-              value={statusFilter}
-              onChangeAction={(v) => setStatusFilter(v as ChequeStatus | "")}
-              placeholder={t("treasury.allStatuses")}
-              className="h-9 rounded-md border border-border bg-surface px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              options={STATUS_OPTIONS.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
-            />
-          </div>
-          <DateField label={t("treasury.agingAsOf")} value={dueBefore} onChangeAction={setDueBefore} />
-        </div>
+        <DateField label={t("treasury.agingAsOf")} value={dueBefore} onChangeAction={setDueBefore} />
         <NewButton onClickAction={() => setCreateOpen(true)}>{t("treasury.receiveNewCheque")}</NewButton>
       </div>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50 text-muted-foreground">
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.status")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.chequeNumber")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.receivedOn")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.dueDate")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.amount")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("treasury.description")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cheques?.map((c) => (
-                <tr
-                  key={c.id}
-                  onClick={() => router.push(`/treasury/received-cheques/${c.id}`)}
-                  className="cursor-pointer border-b border-border last:border-0 hover:bg-muted"
-                >
-                  <td className="px-3 py-2 text-muted-foreground">{t(STATUS_LABEL[c.status])}</td>
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`/treasury/received-cheques/${c.id}`}
-                      className="text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      {c.chequeNumber ? toPersianDigits(c.chequeNumber) : "—"}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{c.receivedOn}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{c.dueDate}</td>
-                  <td className="tabular-nums px-3 py-2 text-foreground">{toPersianDigits(c.amount)}</td>
-                  <td className="px-3 py-2 text-foreground">{c.description}</td>
-                </tr>
-              ))}
-              {cheques?.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    —
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<ChequeSummary>
+        columns={[
+          {
+            key: "status",
+            header: t("treasury.status"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            filter: (
+              <Select
+                value={statusFilter}
+                onChangeAction={(v) => setStatusFilter(v as ChequeStatus | "")}
+                placeholder={t("treasury.allStatuses")}
+                className={filterSelectClass}
+                options={STATUS_OPTIONS.map((s) => ({ value: s, label: t(STATUS_LABEL[s]) }))}
+              />
+            ),
+            render: (c) => t(STATUS_LABEL[c.status]),
+          },
+          {
+            key: "chequeNumber",
+            header: t("treasury.chequeNumber"),
+            sortable: true,
+            filter: <FilterInput value={chequeNumberFilter} onChangeAction={setChequeNumberFilter} />,
+            render: (c) => (
+              <Link
+                href={`/treasury/received-cheques/${c.id}`}
+                className="text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {c.chequeNumber ? toPersianDigits(c.chequeNumber) : "—"}
+              </Link>
+            ),
+          },
+          {
+            key: "receivedOn",
+            header: t("treasury.receivedOn"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            render: (c) => c.receivedOn,
+          },
+          {
+            key: "dueDate",
+            header: t("treasury.dueDate"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            render: (c) => c.dueDate,
+          },
+          {
+            key: "amount",
+            header: t("treasury.amount"),
+            sortable: true,
+            tdClassName: "tabular-nums text-foreground",
+            render: (c) => toPersianDigits(c.amount),
+          },
+          {
+            key: "description",
+            header: t("treasury.description"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={descriptionFilter} onChangeAction={setDescriptionFilter} />,
+            render: (c) => c.description,
+          },
+        ]}
+        rows={cheques}
+        isLoading={isLoading}
+        rowKeyAction={(c) => c.id}
+        sort={sort}
+        onSortAction={toggleSort}
+        onRowClickAction={(c) => router.push(`/treasury/received-cheques/${c.id}`)}
+      />
 
       <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("treasury.receiveNewCheque")}>
         <form onSubmit={handleSubmit((values) => receiveMutation.mutate(values))} className="flex flex-col gap-4">

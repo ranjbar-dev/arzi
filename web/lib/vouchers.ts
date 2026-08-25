@@ -13,7 +13,6 @@ export interface VoucherSummary {
   totalCredit: number;
   lineCount: number;
   status: VoucherStatus;
-  kind: "ledger" | "daybook";
   isLocked: boolean;
 }
 

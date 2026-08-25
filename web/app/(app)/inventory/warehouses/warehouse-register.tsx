@@ -16,6 +16,7 @@ import { AccountField } from "@/components/account-field";
 import { Modal } from "@/components/modal";
 import { NewButton } from "@/components/new-button";
 import { Field, fieldInputClass } from "@/components/form-field";
+import { DataTable, FilterInput, useDebounced, useSort } from "@/components/data-table";
 import type { Warehouse } from "@/lib/inventory";
 
 const schema = z.object({
@@ -49,10 +50,20 @@ export function WarehouseRegister() {
   const queryClient = useQueryClient();
   const [accounts, setAccounts] = useState<Record<string, number | null>>({});
   const [createOpen, setCreateOpen] = useState(false);
+  const [nameFilter, setNameFilter] = useState("");
+  const debouncedName = useDebounced(nameFilter);
+  const { sort, toggleSort } = useSort();
+
+  const params = new URLSearchParams();
+  if (debouncedName) params.set("search", debouncedName);
+  if (sort) {
+    params.set("sort", sort.field);
+    params.set("order", sort.dir);
+  }
 
   const { data: warehouses, isLoading } = useQuery({
-    queryKey: ["warehouses"],
-    queryFn: () => apiRequest<Warehouse[]>("/api/v1/warehouses"),
+    queryKey: ["warehouses", debouncedName, sort],
+    queryFn: () => apiRequest<Warehouse[]>(`/api/v1/warehouses?${params.toString()}`),
   });
 
   const {
@@ -96,47 +107,50 @@ export function WarehouseRegister() {
         <NewButton onClickAction={() => setCreateOpen(true)}>{t("inventory.newWarehouse")}</NewButton>
       </div>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/50 text-muted-foreground">
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.warehouseName")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("inventory.vatRate")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("common.active")}</th>
-                <th className="px-3 py-2 text-start font-medium">{t("common.actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {warehouses?.map((w) => (
-                <tr key={w.id} className="border-b border-border last:border-0 hover:bg-muted">
-                  <td className="px-3 py-2 text-foreground">{w.name}</td>
-                  <td className="tabular-nums px-3 py-2 text-muted-foreground">{toPersianDigits(w.vatRatePct)}%</td>
-                  <td className="px-3 py-2 text-muted-foreground">{w.isActive ? t("common.active") : t("common.inactive")}</td>
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleActiveMutation.mutate({ id: w.id, activate: !w.isActive })}
-                      className="cursor-pointer text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      {w.isActive ? t("inventory.deactivate") : t("inventory.activate")}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {warehouses?.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-3 py-6 text-center text-sm text-muted-foreground">
-                    —
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<Warehouse>
+        columns={[
+          {
+            key: "name",
+            header: t("inventory.warehouseName"),
+            sortable: true,
+            tdClassName: "text-foreground",
+            filter: <FilterInput value={nameFilter} onChangeAction={setNameFilter} />,
+            render: (w) => w.name,
+          },
+          {
+            key: "vatRatePct",
+            header: t("inventory.vatRate"),
+            sortable: true,
+            tdClassName: "tabular-nums text-muted-foreground",
+            render: (w) => `${toPersianDigits(w.vatRatePct)}%`,
+          },
+          {
+            key: "isActive",
+            header: t("common.active"),
+            sortable: true,
+            tdClassName: "text-muted-foreground",
+            render: (w) => (w.isActive ? t("common.active") : t("common.inactive")),
+          },
+          {
+            key: "actions",
+            header: t("common.actions"),
+            render: (w) => (
+              <button
+                type="button"
+                onClick={() => toggleActiveMutation.mutate({ id: w.id, activate: !w.isActive })}
+                className="cursor-pointer text-accent hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {w.isActive ? t("inventory.deactivate") : t("inventory.activate")}
+              </button>
+            ),
+          },
+        ]}
+        rows={warehouses}
+        isLoading={isLoading}
+        rowKeyAction={(w) => w.id}
+        sort={sort}
+        onSortAction={toggleSort}
+      />
 
       <Modal open={createOpen} onCloseAction={() => setCreateOpen(false)} title={t("inventory.newWarehouse")}>
         <form onSubmit={handleSubmit((values) => createMutation.mutate(values))} className="flex flex-col gap-4">

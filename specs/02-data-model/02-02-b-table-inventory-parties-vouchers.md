@@ -72,7 +72,7 @@ Confidence **A** for the typed columns (persistent fields in `DKolU.dfm`, `DMoei
 | `M_Ta2` | `int` | `analytic2_code` | `integer` | no | `0` | no | Denormalised `Sarfasl.S_Ta2` |
 | `M_Code` | `int` | `account_id` | `bigint` | no | — | no | **FK → `Sarfasl.S_SSN`.** Back-filled after insert in several paths (`FactorPesteh_U.pas:229-230`) and left `0` by the file importer (`SanadMoeinu.pas:328`, §10.6 defect). Also appears as `TStringField` in `MakeSanagU.dfm` — type drift. |
 | `M_Tx` | `int` | `status` | `voucher_status` enum | no | `'draft'` | no | `0` draft / `1` confirmed / `2` posted (§9.7). Duplicated from `DMoein.DM_Tx`. |
-| `M_Kind` | `smallint` (`TSmallintField`) | `journal_kind` | `smallint` | no | `1` | no | `1` = ledger (`Moein`), `2` = journal/daybook (`Rooznameh`). Only these two values are written (`ArticleMoeinu.dfm` `@kind` default `1`, `ArticleRooznamehU.dfm` default `2`). |
+| `M_Kind` | `smallint` (`TSmallintField`) | *(dropped)* | — | — | — | — | `1` = ledger (`Moein`), `2` = journal/daybook (`Rooznameh`). Journal (Rooznameh) generation was never built in the rebuild, so every row is always `1` — no column carries the distinction. |
 | `M_ID` | `int` | `source_module` | `smallint` | no | `0` | no | **Source-module code** — which subsystem created the line. Observed values below. |
 | `M_Link` | `int` | `source_id` | `bigint` | yes | — | no | Primary key of the source document **in the table implied by `M_ID`** — a polymorphic pointer, impossible to constrain. E.g. `M_ID=21` ⇒ `M_Link = DCheck.S_SSN` (`CheckDaryaftU.pas:333`). |
 | `M_User` | `int` | `created_by` | `bigint` | no | — | no | **FK → `PassWord.UserCode`.** Hard-coded to `68` by the carry-forward routine (`EnteghalU.pas:254` etc., §10.5 defect 3). |
@@ -139,7 +139,7 @@ Confidence **A** (persistent fields in `RooznamehViewU.dfm`, `SanadViewU.dfm`).
 | `DM_TBes` | `bigint` (`TLargeintField`) | `total_credit` | `bigint` | no | `0` | no | **Denormalised** `SUM(Moein.M_Bes)` |
 | `DM_Count` | `int` | `line_count` | `integer` | no | `0` | no | **Denormalised** line count. A header with `DM_Count = 0` is deleted (`Dmu.pas:855`). |
 | `DM_Tx` | `tinyint` (`TWordField`) | `status` | `voucher_status` enum | no | `'draft'` | no | `0` draft / `1` confirmed / `2` posted. Transition `0→1` requires `DM_TBed = DM_TBes` (`SanadViewU.pas:298,301`) — **the only balance check in the system.** |
-| `DM_Kind` | `int` | `journal_kind` | `smallint` | no | `1` | no | `1` = ledger, `2` = journal/daybook (`RooznamehViewU.pas:139` filters `DM_kind=2`). Mirrors `Moein.M_Kind`. |
+| `DM_Kind` | `int` | *(dropped)* | — | — | — | — | `1` = ledger, `2` = journal/daybook (`RooznamehViewU.pas:139` filters `DM_kind=2`). Mirrors `Moein.M_Kind` — dropped for the same reason (journal generation never built). |
 | `DM_Lock` | `tinyint` (`TWordField`) | `is_locked` | `boolean` | no | `false` | no | Administrative freeze; non-admins blocked by `Is_Admin_Or_Valid_Sanad` (`Dmu.pas:993`), **fail-closed** (§9.6). UI toggle `RooznamehViewU.pas:420`, permission key `1139`. |
 | `DM_Atf` | `int` | `attachment_count` | `integer` | yes | — | no | `عطف` — cross-reference / attachment number. Purpose unconfirmed (§12). |
 | `DM_CUser` | `int` | `created_by` | `bigint` | no | — | no | **FK → `PassWord.UserCode`.** `Dmu.pas:831` |

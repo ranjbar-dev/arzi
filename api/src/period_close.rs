@@ -259,13 +259,11 @@ pub async fn close_books(
         return Err(bad_request("destination_in_source"));
     }
 
-    // Step 4: roll up every leaf account under the ticked Kols to its net balance
-    // (kind = 'ledger' only — matches the legacy's `M_Kind=1` filter, excluding
-    // already-summarised daybook/journal lines from double-counting).
+    // Step 4: roll up every leaf account under the ticked Kols to its net balance.
     let leaf_balances: Vec<(i64, i64)> = sqlx::query_as(
         "SELECT vl.account_id, SUM(vl.debit_amount - vl.credit_amount)::bigint \
          FROM voucher_lines vl JOIN accounts a ON a.id = vl.account_id \
-         WHERE vl.tenant_id = $1 AND vl.fiscal_year_id = $2 AND vl.kind = 'ledger' \
+         WHERE vl.tenant_id = $1 AND vl.fiscal_year_id = $2 \
            AND a.general_ledger_code = ANY($3) \
          GROUP BY vl.account_id",
     )
@@ -319,8 +317,8 @@ pub async fn close_books(
     let voucher_id: i64 = sqlx::query_scalar(
         "INSERT INTO vouchers \
          (tenant_id, fiscal_year_id, voucher_number, voucher_date, description, \
-          total_debit, total_credit, line_count, kind, created_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, $6, $7, 'ledger', $8) RETURNING id",
+          total_debit, total_credit, line_count, created_by) \
+         VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8) RETURNING id",
     )
     .bind(auth.tenant_id)
     .bind(fiscal_year_id)
@@ -345,8 +343,8 @@ pub async fn close_books(
         sqlx::query(
             "INSERT INTO voucher_lines \
              (tenant_id, voucher_id, fiscal_year_id, line_date, debit_amount, credit_amount, \
-              description, account_id, kind, created_by) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ledger', $9)",
+              description, account_id, created_by) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(auth.tenant_id)
         .bind(voucher_id)
@@ -364,8 +362,8 @@ pub async fn close_books(
         sqlx::query(
             "INSERT INTO voucher_lines \
              (tenant_id, voucher_id, fiscal_year_id, line_date, debit_amount, credit_amount, \
-              description, account_id, kind, created_by) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ledger', $9)",
+              description, account_id, created_by) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(auth.tenant_id)
         .bind(voucher_id)
@@ -539,10 +537,10 @@ pub async fn carry_forward(
     }
 
     // Driving query (03-09-b.md §9.3): every leaf account of the outgoing year with a
-    // nonzero net balance, kind = 'ledger' only (matches the legacy's `M_kind=1` filter).
+    // nonzero net balance.
     let leaf_balances: Vec<(i64, i64)> = sqlx::query_as(
         "SELECT account_id, SUM(debit_amount - credit_amount)::bigint FROM voucher_lines \
-         WHERE tenant_id = $1 AND fiscal_year_id = $2 AND kind = 'ledger' \
+         WHERE tenant_id = $1 AND fiscal_year_id = $2 \
          GROUP BY account_id",
     )
     .bind(auth.tenant_id)
@@ -606,8 +604,8 @@ pub async fn carry_forward(
     let closing_voucher_id: i64 = sqlx::query_scalar(
         "INSERT INTO vouchers \
          (tenant_id, fiscal_year_id, voucher_number, voucher_date, description, \
-          total_debit, total_credit, line_count, kind, created_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, $6, $7, 'ledger', $8) RETURNING id",
+          total_debit, total_credit, line_count, created_by) \
+         VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8) RETURNING id",
     )
     .bind(auth.tenant_id)
     .bind(fiscal_year_id)
@@ -624,8 +622,8 @@ pub async fn carry_forward(
     let opening_voucher_id: i64 = sqlx::query_scalar(
         "INSERT INTO vouchers \
          (tenant_id, fiscal_year_id, voucher_number, voucher_date, description, \
-          total_debit, total_credit, line_count, kind, created_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, $6, $7, 'ledger', $8) RETURNING id",
+          total_debit, total_credit, line_count, created_by) \
+         VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8) RETURNING id",
     )
     .bind(auth.tenant_id)
     .bind(incoming.id)
@@ -644,8 +642,8 @@ pub async fn carry_forward(
         sqlx::query(
             "INSERT INTO voucher_lines \
              (tenant_id, voucher_id, fiscal_year_id, line_date, debit_amount, credit_amount, \
-              description, account_id, kind, created_by) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ledger', $9)",
+              description, account_id, created_by) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(auth.tenant_id)
         .bind(closing_voucher_id)
@@ -663,8 +661,8 @@ pub async fn carry_forward(
         sqlx::query(
             "INSERT INTO voucher_lines \
              (tenant_id, voucher_id, fiscal_year_id, line_date, debit_amount, credit_amount, \
-              description, account_id, kind, created_by) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ledger', $9)",
+              description, account_id, created_by) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(auth.tenant_id)
         .bind(closing_voucher_id)
@@ -682,8 +680,8 @@ pub async fn carry_forward(
         sqlx::query(
             "INSERT INTO voucher_lines \
              (tenant_id, voucher_id, fiscal_year_id, line_date, debit_amount, credit_amount, \
-              description, account_id, kind, created_by) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ledger', $9)",
+              description, account_id, created_by) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(auth.tenant_id)
         .bind(opening_voucher_id)
@@ -701,8 +699,8 @@ pub async fn carry_forward(
         sqlx::query(
             "INSERT INTO voucher_lines \
              (tenant_id, voucher_id, fiscal_year_id, line_date, debit_amount, credit_amount, \
-              description, account_id, kind, created_by) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ledger', $9)",
+              description, account_id, created_by) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(auth.tenant_id)
         .bind(opening_voucher_id)
