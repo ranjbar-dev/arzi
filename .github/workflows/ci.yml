@@ -1,8 +1,14 @@
 name: CI / CD
 
 # Test on every push/PR; deploy only after tests pass, and only for pushes to main.
+# Path-filtered: api/* changes trigger only backend jobs, web/* changes trigger only frontend
+# jobs — they run as separate, parallel jobs (not one shared job), so an api-only commit never
+# spins up node/npm and vice versa.
 # Deploy reuses the existing docker-compose shape (`build:` context, not `image:` — see
 # docker-compose.yml) by having the server pull and rebuild itself over SSH. No registry.
+# Both deploy jobs share one git checkout on the server, so they're pinned to the same
+# concurrency group (deploy-main) to serialize the `git reset --hard` step — still two separate,
+# independently-triggered jobs, just not literally simultaneous on the server.
 # Schema migrations stay a separate manual step (migrate.yml) — this workflow never runs
 # `sqlx migrate run` against prod.
 
@@ -13,7 +19,32 @@ on:
     branches: [main]
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'api/**'
+              - 'docker-compose.yml'
+              - 'docker-compose.prod.yml'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'web/**'
+              - 'docker-compose.yml'
+              - 'docker-compose.prod.yml'
+              - '.github/workflows/ci.yml'
+
   lint-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,6 +94,8 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
   test-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -106,6 +139,8 @@ jobs:
         run: cargo test
 
   test-web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -134,10 +169,13 @@ jobs:
         env:
           API_INTERNAL_URL: http://api:8080
 
-  deploy:
-    needs: [lint-api, test-api, test-web]
+  deploy-api:
+    needs: [changes, lint-api, test-api]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-main
+      cancel-in-progress: false
     steps:
       # Required repository secrets:
       #   DEPLOY_HOST     - server IP/hostname
@@ -155,7 +193,7 @@ jobs:
       #                      Only ever used to create the account if it's missing (ON CONFLICT DO
       #                      NOTHING below) — rotate it via the admin UI afterwards, not by
       #                      changing this secret.
-      - name: SSH deploy
+      - name: SSH deploy api
         uses: appleboy/ssh-action@v1.0.3
         env:
           DEPLOY_ENV_FILE: ${{ secrets.DEPLOY_ENV_FILE }}
@@ -173,8 +211,6 @@ jobs:
           command_timeout: 40m
           script: |
             set -e
-            # BuildKit is required for the Dockerfiles' cache mounts (cargo registry/target,
-            # npm store, .next/cache) to actually persist build cache across deploys.
             export DOCKER_BUILDKIT=1
             export COMPOSE_DOCKER_CLI_BUILD=1
             if [ ! -d "${{ secrets.DEPLOY_PATH }}/.git" ]; then
@@ -184,9 +220,7 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             printf '%s\n' "$DEPLOY_ENV_FILE" > .env
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml down
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml build
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --no-deps db api
 
             # Bootstrap the default tenant + first superuser (idempotent — ON CONFLICT DO
             # NOTHING). `api` runs migrations on boot, so wait for the `users` table before
@@ -204,4 +238,39 @@ jobs:
             ON CONFLICT (tenant_id, username) DO NOTHING;
             SQL
 
+            docker image prune -f
+
+  deploy-web:
+    needs: [changes, test-web]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-main
+      cancel-in-progress: false
+    steps:
+      # Same repository secrets as deploy-api (DEPLOY_HOST/PORT/USER/PASSWORD/PATH/ENV_FILE) —
+      # see that job for descriptions.
+      - name: SSH deploy web
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_ENV_FILE: ${{ secrets.DEPLOY_ENV_FILE }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          envs: DEPLOY_ENV_FILE
+          command_timeout: 40m
+          script: |
+            set -e
+            export DOCKER_BUILDKIT=1
+            export COMPOSE_DOCKER_CLI_BUILD=1
+            if [ ! -d "${{ secrets.DEPLOY_PATH }}/.git" ]; then
+              git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git "${{ secrets.DEPLOY_PATH }}"
+            fi
+            cd "${{ secrets.DEPLOY_PATH }}"
+            git fetch origin main
+            git reset --hard origin/main
+            printf '%s\n' "$DEPLOY_ENV_FILE" > .env
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --no-deps web
             docker image prune -f
